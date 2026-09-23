@@ -46,7 +46,7 @@ describe("V5__englishIdsWithoutSitePrefix — called directly", () => {
     expect(after.inventory).toEqual(before.inventory)
     expect(after.equipped).toEqual(before.equipped)
     expect(after.mindMethods).toEqual(before.mindMethods)
-    expect(after.oddities).toEqual(before.oddities)
+    expect(after.unclaimedOddityNodes).toEqual(before.unclaimedOddityNodes)
   })
 
   it("does not mutate its input, and migrating twice equals migrating once", () => {
@@ -76,8 +76,8 @@ describe("v4 profile carrying legacy `site-` entity ids", () => {
       name: "legacy",
       classId: "mingJinYing",
       steps: [
-        { id: "s1", skillId: "site-mingJinYing-swordq", hitCount: 1, prePull: false },
-        { id: "s2", skillId: "site-mingJinYing-spearheavy", hitCount: 1, prePull: false },
+        { id: "s1", skillId: "site-mingJinYing-swordq" },
+        { id: "s2", skillId: "site-mingJinYing-spearheavy" },
       ],
       permanentBuffIds: ["site-buff-mingJinYing-river-flow"],
       createdAt: "2026-01-01T00:00:00.000Z",

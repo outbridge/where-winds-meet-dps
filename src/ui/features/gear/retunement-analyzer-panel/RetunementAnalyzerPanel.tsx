@@ -3,6 +3,8 @@ import type { GearPiece } from "../../../../engine/types"
 import type { RetunementRow } from "../../../../engine/dpsWorker"
 import type { RetunementReason } from "../../../hooks/useRetunementAnalysis"
 import { statLineLabel } from "../../../../data/stats/statLines"
+import { heirloomMatch, type HeirloomProfile } from "../../../../engine/heirloom"
+import { retuneAttemptBudget } from "../../../../engine/retunement"
 import { HelpHint } from "../../../components/help-hint/HelpHint"
 import { useI18n } from "../../../../i18n/i18nContext"
 import { statLineKey } from "../../../../i18n/contentKeys"
@@ -10,6 +12,7 @@ import retunement from "../shared/retunement.module.scss"
 
 interface Props {
   piece: GearPiece | null
+  profile: HeirloomProfile
   rows: RetunementRow[]
   reason: RetunementReason
   isPending: boolean
@@ -25,6 +28,8 @@ interface Pick extends Ranked {
   currentWord: string
   word: string
   legalCount: number
+  pDraw: number | null
+  pImprove: number | null
 }
 
 function fmtDpsDelta(deltaDps: number): string {
@@ -46,8 +51,20 @@ function fmtChance(legalCount: number): string {
   return `1 / ${legalCount} (${pct} %)`
 }
 
-export function RetunementAnalyzerPanel({ piece, rows, reason, isPending }: Props) {
+function fmtDrawChance(pDraw: number | null, legalCount: number): string {
+  return pDraw === null ? fmtChance(legalCount) : `${(pDraw * 100).toFixed(1)} %`
+}
+
+function fmtPercent(value: number | null): string {
+  return value === null ? "—" : `${(value * 100).toFixed(1)} %`
+}
+
+export function RetunementAnalyzerPanel({ piece, profile, rows, reason, isPending }: Props) {
   const { t } = useI18n()
+
+  const heirloom = useMemo(() => (piece ? heirloomMatch(piece, profile) : null), [piece, profile])
+  const isHeirloom = (heirloom?.builds.length ?? 0) > 0
+  const heirloomSwap = heirloom?.swap ?? null
 
   const countBySlot = useMemo(() => {
     const counts = new Map<number, number>()
@@ -73,6 +90,8 @@ export function RetunementAnalyzerPanel({ piece, rows, reason, isPending }: Prop
             deltaDps: row.deltaDps,
             deltaDpsRelayed: row.deltaDpsRelayed,
             legalCount: countBySlot.get(row.slotIndex) ?? 0,
+            pDraw: row.pDraw,
+            pImprove: row.pImprove,
           }
         }
       }
@@ -101,6 +120,8 @@ export function RetunementAnalyzerPanel({ piece, rows, reason, isPending }: Prop
         deltaDps: row.deltaDps,
         deltaDpsRelayed: row.deltaDpsRelayed,
         legalCount: best.legalCount,
+        pDraw: row.pDraw,
+        pImprove: row.pImprove,
       })
     }
     out.sort((rowA, rowB) => rowB.deltaDps - rowA.deltaDps)
@@ -149,6 +170,7 @@ export function RetunementAnalyzerPanel({ piece, rows, reason, isPending }: Prop
       : null
 
   const hasRows = rows.length > 0
+  const budget = retuneAttemptBudget(piece.level)
 
   return (
     <div className={`panel ${retunement.panel}`}>
@@ -156,13 +178,52 @@ export function RetunementAnalyzerPanel({ piece, rows, reason, isPending }: Prop
         <span className="toolbar-label">{t("common.retunement")}</span>
         {isPending && <span className="hint">{t("gear.retunementAnalyzer.computing")}</span>}
         {lockedNote && <span className="hint">{lockedNote}</span>}
+        <span className="hint">
+          {budget === "single" ? t("gear.retuneBudget.single") : t("gear.retuneBudget.repeatable")}
+        </span>
       </div>
 
       {!hasRows && isPending && (
         <div className="hint">{t("gear.retunementAnalyzer.computing")}</div>
       )}
 
-      {best && (
+      {isHeirloom && (
+        <div className={`${retunement.best} ${retunement.heirloomPick}`}>
+          <div className={retunement.bestRow}>
+            <span className={retunement.bestLabel}>
+              {t("gear.retunementAnalyzer.alreadyAnHeirloom")}
+            </span>
+            <span className={retunement.heirloomTag}>{t("common.heirloom")}</span>
+          </div>
+          <div className={retunement.heirloomNote}>
+            {t("gear.retunementAnalyzer.keepItRetuningCanOnly")}
+          </div>
+        </div>
+      )}
+
+      {heirloomSwap && (
+        <div className={`${retunement.best} ${retunement.heirloomPick}`}>
+          <div className={retunement.bestRow}>
+            <span className={retunement.bestLabel}>
+              {t("gear.retunementAnalyzer.makesItAnHeirloom")}
+            </span>
+            <span className={retunement.bestSlot}>
+              {t("gear.retunementAnalyzer.slot") + (heirloomSwap.slotIndex + 1)}
+              {heirloomSwap.currentWord
+                ? ` (${t("common.active")}: ${t(statLineKey(heirloomSwap.currentWord), statLineLabel(heirloomSwap.currentWord))})`
+                : ""}
+              {" → "}
+              <strong>{t(statLineKey(heirloomSwap.word), statLineLabel(heirloomSwap.word))}</strong>
+            </span>
+            <span className={retunement.heirloomTag}>{t("common.heirloom")}</span>
+          </div>
+          <div className={retunement.heirloomNote}>
+            {t("gear.retunementAnalyzer.worthMoreThanTheDpsPick")}
+          </div>
+        </div>
+      )}
+
+      {best && !isHeirloom && (
         <div className={retunement.best}>
           <div className={retunement.bestRow}>
             <span className={retunement.bestLabel}>
@@ -204,8 +265,16 @@ export function RetunementAnalyzerPanel({ piece, rows, reason, isPending }: Prop
           )}
           <div className={retunement.bestRow}>
             <span className={retunement.bestLabel}>{t("gear.retunementAnalyzer.success")}</span>
-            <span>{fmtChance(best.legalCount)}</span>
+            <span>{fmtDrawChance(best.pDraw, best.legalCount)}</span>
           </div>
+          {best.pImprove !== null && (
+            <div className={retunement.bestRow}>
+              <span className={retunement.bestLabel}>
+                {t("gear.retunementAnalyzer.chanceToImprove")}
+              </span>
+              <span>{fmtPercent(best.pImprove)}</span>
+            </div>
+          )}
           {!recommended && (
             <div className={retunement.warn}>
               {t("gear.retunementAnalyzer.notRecommendedToRetuneThis")}
@@ -222,16 +291,24 @@ export function RetunementAnalyzerPanel({ piece, rows, reason, isPending }: Prop
             {t("gear.retunementAnalyzer.bothAt94")}
             <HelpHint text={t("gear.retunementAnalyzer.scoresTheSwapHint")} />
           </div>
+          <div className={retunement.th}>{t("gear.retunementAnalyzer.drawChance")}</div>
           {focusSlotCandidates.map((candidate) => (
             <div key={`${candidate.slotIndex}-${candidate.word}`} style={{ display: "contents" }}>
               <div className={retunement.cell}>
                 {t(statLineKey(candidate.word), statLineLabel(candidate.word))}
+                {heirloomSwap?.slotIndex === candidate.slotIndex &&
+                  heirloomSwap.word === candidate.word && (
+                    <span className={retunement.heirloomTag}>{t("common.heirloom")}</span>
+                  )}
               </div>
               <div className={`${retunement.cell} ${deltaSignClass(candidate.deltaDps)}`}>
                 {fmtDpsDelta(candidate.deltaDps)}
               </div>
               <div className={`${retunement.cell} ${deltaSignClass(candidate.deltaDpsRelayed)}`}>
                 {fmtDpsDelta(candidate.deltaDpsRelayed)}
+              </div>
+              <div className={retunement.cell}>
+                {fmtDrawChance(candidate.pDraw, candidate.legalCount)}
               </div>
             </div>
           ))}

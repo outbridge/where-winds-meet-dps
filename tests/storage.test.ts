@@ -38,9 +38,9 @@ import { kvStore } from "../src/kvStore"
 import { EMPTY_EQUIPPED } from "../src/engine/types"
 import type { GearPiece, Inputs, StoredProfile } from "../src/engine/types"
 import { CLASS_IDS } from "../src/definitions/classes/registry"
-import { getDefaultTalentsForClass } from "../src/definitions/baseStats"
+import { getDefaultTalentsForClass, getMindMethodContributions } from "../src/definitions/baseStats"
 import { runEngine } from "../src/engine/dps"
-import { applyArmorSet, applyBowSet } from "../src/engine/panel"
+import { allowedInnerWaysForClass, applyArmorSet, applyBowSet } from "../src/engine/panel"
 
 type StoredGearPiece = Omit<GearPiece, "words"> & {
   words: readonly { word: string; value: number; retuned: boolean }[]
@@ -137,7 +137,7 @@ describe("profiles carry selections only — derived stats are never persisted",
     expect(persistedInputs.inventory).toEqual(defaultInputs.inventory)
     expect(persistedInputs.equipped).toEqual(defaultInputs.equipped)
     expect(persistedInputs.martialArtsTalents).toEqual(defaultInputs.martialArtsTalents)
-    expect(persistedInputs.oddities).toEqual(defaultInputs.oddities)
+    expect(persistedInputs.unclaimedOddityNodes).toEqual(defaultInputs.unclaimedOddityNodes)
     expect(persistedInputs.combatSettings).toEqual(defaultInputs.combatSettings)
   })
 
@@ -217,6 +217,40 @@ describe("profiles carry selections only — derived stats are never persisted",
     expect(profiles[0].inputs.bamboocut).toEqual({ min: 0, max: 0, penetration: 0 })
   })
 
+  it("loadProfiles fills a profile saved before arsenalScores existed with each store's Total Mastery", () => {
+    const { arsenalScores: _dropped, ...withoutArsenalScores } = defaultInputs
+    void _dropped
+    localStorage.setItem(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: LATEST_PROFILES_VERSION,
+        profiles: [{ id: "p1", name: "Pre-Arsenal", inputs: withoutArsenalScores }],
+        activeId: "p1",
+      }),
+    )
+
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.arsenalScores).toEqual(defaultInputs.arsenalScores)
+  })
+
+  it("loadProfiles keeps a stored arsenalScores value above its store's cap rather than lowering it", () => {
+    const inputs: Inputs = {
+      ...defaultInputs,
+      arsenalScores: { ...defaultInputs.arsenalScores, 8: 7200 },
+    }
+    localStorage.setItem(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: LATEST_PROFILES_VERSION,
+        profiles: [{ id: "p1", name: "Overflow", inputs }],
+        activeId: "p1",
+      }),
+    )
+
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.arsenalScores[8]).toBe(7200)
+  })
+
   it("the default build's derived output is unaffected by zeroing the derived fields first", () => {
     expect(withDerivedStats(defaultInputs)).toEqual(
       withDerivedStats(withZeroedDerivedStats(defaultInputs)),
@@ -245,7 +279,7 @@ describe("migrateSeededSkillIds — repairs pre-fix seeded-copy ids", () => {
 
     const rotation = makeRotation(CLASS, {
       name: "Custom",
-      steps: [makeStep({ skillId: stale.id, hitCount: 1 })],
+      steps: [makeStep({ skillId: stale.id })],
     })
     saveCustomRotation(rotation)
 
@@ -349,8 +383,8 @@ describe("mystic-boost merges (field/gear-word/buff-stat-key, no version bump)",
       hp: 0,
       physDef: 0,
       words: [
-        { word: "Single Burst", value: 0.07, retuned: false },
         { word: "", value: 0, retuned: false },
+        { word: "Single Burst", value: 0.07, retuned: true },
         { word: "", value: 0, retuned: false },
         { word: "", value: 0, retuned: false },
         { word: "", value: 0, retuned: false },
@@ -363,8 +397,8 @@ describe("mystic-boost merges (field/gear-word/buff-stat-key, no version bump)",
       ...burstPiece,
       id: "test-control-piece",
       words: [
-        { word: "Single Control", value: 0.07, retuned: false },
         { word: "", value: 0, retuned: false },
+        { word: "Single Control", value: 0.07, retuned: true },
         { word: "", value: 0, retuned: false },
         { word: "", value: 0, retuned: false },
         { word: "", value: 0, retuned: false },
@@ -383,28 +417,28 @@ describe("mystic-boost merges (field/gear-word/buff-stat-key, no version bump)",
     const { profiles } = loadProfiles()
     const hydratedInputs = profiles[0].inputs
     for (const piece of hydratedInputs.inventory) {
-      expect(piece.words[0].word).toBe("singleTargetMysticBoost")
-      expect(piece.words[0].value).toBe(0.07)
+      expect(piece.words[1].word).toBe("singleTargetMysticBoost")
+      expect(piece.words[1].value).toBe(0.07)
       const contribution = computeGearContribution(piece, hydratedInputs)
       const entry = contribution.find((row) => row.path === "singleMysticBoost")
       expect(entry?.amount).toBeCloseTo(0.07, 10)
     }
   })
 
-  it("renames a stored piece's Formless words to Void Attack and keeps the primary-attribute contribution", () => {
-    const voidPiece: StoredGearPiece = {
-      id: "test-void-piece",
-      slot: "helm",
-      level: 91,
+  it("renames a stored piece's Formless labels to their stat-line ids and keeps the primary-attribute contribution", () => {
+    const formlessPiece: StoredGearPiece = {
+      id: "test-formless-piece",
+      slot: "leftWeapon",
+      level: 96,
       rarity: "legendary",
       minPhys: 0,
       maxPhys: 0,
       hp: 0,
       physDef: 0,
       words: [
-        { word: "Max Formless", value: 44.2, retuned: false },
-        { word: "Min Formless", value: 22.1, retuned: false },
         { word: "", value: 0, retuned: false },
+        { word: "Max Formless", value: 44.2, retuned: true },
+        { word: "Min Formless", value: 22.1, retuned: false },
         { word: "", value: 0, retuned: false },
         { word: "", value: 0, retuned: false },
       ],
@@ -412,7 +446,11 @@ describe("mystic-boost merges (field/gear-word/buff-stat-key, no version bump)",
       attunementValue: 0,
       relayed: false,
     }
-    const legacyInputs = { ...defaultInputs, classId: "bellstrikeUmbra", inventory: [voidPiece] }
+    const legacyInputs = {
+      ...defaultInputs,
+      classId: "bellstrikeUmbra",
+      inventory: [formlessPiece],
+    }
     kvStore.set(
       PROFILES_KEY,
       JSON.stringify({
@@ -425,8 +463,8 @@ describe("mystic-boost merges (field/gear-word/buff-stat-key, no version bump)",
     const { profiles } = loadProfiles()
     const hydratedInputs = profiles[0].inputs
     const piece = hydratedInputs.inventory[0]
-    expect(piece.words[0].word).toBe("maxVoidAttack")
-    expect(piece.words[1].word).toBe("minVoidAttack")
+    expect(piece.words[1].word).toBe("maxFormless")
+    expect(piece.words[2].word).toBe("minFormless")
     const contribution = computeGearContribution(piece, hydratedInputs)
     expect(contribution.find((row) => row.path === "bellstrike.max")?.amount).toBeCloseTo(44.2, 10)
     expect(contribution.find((row) => row.path === "bellstrike.min")?.amount).toBeCloseTo(22.1, 10)
@@ -443,8 +481,8 @@ describe("mystic-boost merges (field/gear-word/buff-stat-key, no version bump)",
       hp: 0,
       physDef: 0,
       words: [
-        { word, value: 0.05, retuned: false },
         { word: "", value: 0, retuned: false },
+        { word, value: 0.05, retuned: true },
         { word: "", value: 0, retuned: false },
         { word: "", value: 0, retuned: false },
         { word: "", value: 0, retuned: false },
@@ -474,19 +512,19 @@ describe("mystic-boost merges (field/gear-word/buff-stat-key, no version bump)",
     const { profiles } = loadProfiles()
     const hydratedInputs = profiles[0].inputs
     for (const piece of hydratedInputs.inventory) {
-      expect(piece.words[0].word).toBe("areaMysticBoost")
-      expect(piece.words[0].value).toBe(0.05)
+      expect(piece.words[1].word).toBe("areaMysticBoost")
+      expect(piece.words[1].value).toBe(0.05)
       const contribution = computeGearContribution(piece, hydratedInputs)
       const entry = contribution.find((row) => row.path === "areaMysticBoost")
       expect(entry?.amount).toBeCloseTo(0.05, 10)
     }
   })
 
-  it("clears a stored word the catalogue no longer offers and leaves its neighbours alone", () => {
+  it("keeps a stored word the catalogue no longer offers, roll and all", () => {
     const strandedPiece: StoredGearPiece = {
       id: "test-stranded-piece",
       slot: "helm",
-      level: 91,
+      level: 96,
       rarity: "legendary",
       minPhys: 0,
       maxPhys: 0,
@@ -515,8 +553,98 @@ describe("mystic-boost merges (field/gear-word/buff-stat-key, no version bump)",
 
     const { profiles } = loadProfiles()
     const piece = profiles[0].inputs.inventory[0]
-    expect(piece.words[0]).toEqual({ word: "", value: 0, retuned: false })
+    expect(piece.words[0]).toEqual({ word: "Retired Word", value: 0.09, retuned: false })
     expect(piece.words[1]).toEqual({ word: "crit", value: 0.09, retuned: true })
+  })
+
+  it("scores nothing for a word the catalogue no longer offers", () => {
+    const strandedPiece: StoredGearPiece = {
+      id: "test-stranded-scoring",
+      slot: "helm",
+      level: 91,
+      rarity: "legendary",
+      minPhys: 0,
+      maxPhys: 0,
+      hp: 0,
+      physDef: 0,
+      words: [
+        { word: "Retired Word", value: 0.09, retuned: false },
+        { word: "", value: 0, retuned: false },
+        { word: "", value: 0, retuned: false },
+        { word: "", value: 0, retuned: false },
+        { word: "", value: 0, retuned: false },
+      ],
+      attunement: "",
+      attunementValue: 0,
+      relayed: false,
+    }
+    kvStore.set(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: PROFILES_VERSION,
+        profiles: [
+          {
+            id: "p1",
+            name: "Legacy",
+            inputs: { ...defaultInputs, inventory: [strandedPiece] },
+          },
+        ],
+        activeId: "p1",
+      }),
+    )
+
+    const { profiles } = loadProfiles()
+    const hydratedInputs = profiles[0].inputs
+    const contribution = computeGearContribution(hydratedInputs.inventory[0], hydratedInputs)
+    const fromWords = contribution.filter((row) => row.path !== "hp" && row.path !== "physDef")
+    expect(fromWords).toEqual([])
+  })
+
+  it("hands a profile saved by a newer build its unknown words back unchanged", () => {
+    const fromNewerBuild: StoredGearPiece = {
+      id: "test-newer-build-piece",
+      slot: "leftWeapon",
+      level: 96,
+      rarity: "legendary",
+      minPhys: 0,
+      maxPhys: 0,
+      hp: 0,
+      physDef: 0,
+      words: [
+        { word: "maxWordThisBuildHasNeverHeardOf", value: 41.3, retuned: false },
+        { word: "maxWordThisBuildHasNeverHeardOf", value: 39.2, retuned: false },
+        { word: "maxPhys", value: 73.1, retuned: false },
+        { word: "", value: 0, retuned: false },
+        { word: "", value: 0, retuned: false },
+      ],
+      attunement: "",
+      attunementValue: 0,
+      relayed: false,
+    }
+    kvStore.set(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: PROFILES_VERSION + 1,
+        profiles: [
+          {
+            id: "p1",
+            name: "From tomorrow",
+            inputs: { ...defaultInputs, inventory: [fromNewerBuild] },
+          },
+        ],
+        activeId: "p1",
+      }),
+    )
+
+    const piece = loadProfiles().profiles[0].inputs.inventory[0]
+    expect(piece.words.map((entry) => entry.word)).toEqual([
+      "maxWordThisBuildHasNeverHeardOf",
+      "maxWordThisBuildHasNeverHeardOf",
+      "maxPhys",
+      "",
+      "",
+    ])
+    expect(piece.words.map((entry) => entry.value)).toEqual([41.3, 39.2, 73.1, 0, 0])
   })
 
   it("renames a legacy word rather than clearing it as unknown", () => {
@@ -855,6 +983,93 @@ describe("GearPiece.label / GearPiece.note hydration (additive, no version bump)
 })
 
 // Additive, no version bump — see CLAUDE.md → "localStorage migrations".
+describe("GearPiece.retunedOutWords hydration (additive, no version bump)", () => {
+  const PROFILES_KEY = "wwm.profiles"
+  const PROFILES_VERSION = 4
+
+  beforeEach(() => {
+    try {
+      kvStore.remove(PROFILES_KEY)
+    } catch {}
+  })
+  afterEach(() => {
+    try {
+      kvStore.remove(PROFILES_KEY)
+    } catch {}
+  })
+
+  function makePiece(id: string, extra: Record<string, unknown> = {}): GearPiece {
+    return {
+      id,
+      slot: "leftWeapon",
+      level: 96,
+      rarity: "legendary",
+      minPhys: 0,
+      maxPhys: 0,
+      hp: 0,
+      physDef: 0,
+      words: [
+        { word: "", value: 0, retuned: false },
+        { word: "", value: 0, retuned: false },
+        { word: "", value: 0, retuned: false },
+        { word: "", value: 0, retuned: false },
+        { word: "", value: 0, retuned: false },
+      ],
+      attunement: "",
+      attunementValue: 0,
+      relayed: false,
+      ...extra,
+    } as GearPiece
+  }
+
+  function storeInventory(inventory: GearPiece[]): void {
+    kvStore.set(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: PROFILES_VERSION,
+        profiles: [{ id: "p1", name: "Profile", inputs: { ...defaultInputs, inventory } }],
+        activeId: "p1",
+      }),
+    )
+  }
+
+  it("leaves an absent history absent, defaulting to empty", () => {
+    storeInventory([makePiece("plain-piece")])
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.inventory[0].retunedOutWords).toBeUndefined()
+  })
+
+  it("round-trips a stored history unchanged", () => {
+    storeInventory([makePiece("history-piece", { retunedOutWords: ["momentum", "crit"] })])
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.inventory[0].retunedOutWords).toEqual(["momentum", "crit"])
+  })
+
+  it("keeps a word this build no longer recognises, scoring nothing but hiding nothing wrongly", () => {
+    storeInventory([makePiece("unknown-word", { retunedOutWords: ["notARealWord"] })])
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.inventory[0].retunedOutWords).toEqual(["notARealWord"])
+  })
+
+  it("drops a non-array history to an absent key", () => {
+    storeInventory([makePiece("bad-shape", { retunedOutWords: "momentum" })])
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.inventory[0].retunedOutWords).toBeUndefined()
+  })
+
+  it("is idempotent across repeated hydration", () => {
+    storeInventory([makePiece("history-piece", { retunedOutWords: ["momentum"] })])
+    const first = loadProfiles()
+    kvStore.set(
+      PROFILES_KEY,
+      JSON.stringify({ v: PROFILES_VERSION, profiles: first.profiles, activeId: first.activeId }),
+    )
+    const second = loadProfiles()
+    expect(second.profiles[0].inputs.inventory[0].retunedOutWords).toEqual(["momentum"])
+  })
+})
+
+// Additive, no version bump — see CLAUDE.md → "localStorage migrations".
 describe("seeded-skill tag heal (role:/cast: addressing, no version bump)", () => {
   const CLASS_ID = "bellstrikeUmbra"
   const builtinDetonation = builtinSkillsForClass(CLASS_ID).find(
@@ -994,7 +1209,7 @@ describe("skill/debuff reach heal (receives/triggersBuffs, no version bump)", ()
 
   it("recovers a debuff's receives from its own tags and its dot's implied sustain type, in the value saveCustomDebuff itself returns", () => {
     const builtinCombustion = builtinDebuffsForClass("bellstrikeUmbra").find(
-      (debuff) => debuff.id === "debuff-bellstrikeUmbra-combustion",
+      (debuff) => debuff.id === "debuff-mystic-combustion",
     )!
     const stale = { ...builtinCombustion }
     delete stale.receives
@@ -1041,9 +1256,62 @@ describe("skill/debuff reach heal (receives/triggersBuffs, no version bump)", ()
     expect(reloaded.triggersBuffs).toBeUndefined()
   })
 
+  it("gives an Umbra DoT seeded before the widened bleeding-damage buff its reach", () => {
+    const seeded = {
+      ...builtinDebuffsForClass("bellstrikeUmbra").find(
+        (debuff) => debuff.id === "debuff-mystic-smolder",
+      )!,
+      receives: ["soulShaken"],
+    }
+    saveCustomDebuff(seeded)
+    const healed = loadCustomDebuffsForClass("bellstrikeUmbra").find(
+      (debuff) => debuff.id === seeded.id,
+    )!
+    expect(healed.receives).toEqual(["bellstrikeUmbraBleedingDamage", "soulShaken"])
+  })
+
+  it("leaves an Umbra DoT the user has actually edited alone", () => {
+    const edited = {
+      ...builtinDebuffsForClass("bellstrikeUmbra").find(
+        (debuff) => debuff.id === "debuff-mystic-toad-poison",
+      )!,
+      receives: ["soulShaken", "mountainSplitter"],
+    }
+    saveCustomDebuff(edited)
+    const reloaded = loadCustomDebuffsForClass("bellstrikeUmbra").find(
+      (debuff) => debuff.id === edited.id,
+    )!
+    expect(reloaded.receives).toEqual(["soulShaken", "mountainSplitter"])
+  })
+
+  it("gives a Sword/Spear Martial Q skill seeded before Wolfchaser's Art martial damage its reach", () => {
+    const builtinSwordq = builtinSkillsForClass("bellstrikeUmbra").find(
+      (skill) => skill.id === "bellstrikeUmbra-swordq",
+    )!
+    const stale = { ...seedSkillFromBuiltin("bellstrikeUmbra", builtinSwordq) }
+    delete stale.receives
+    saveCustomSkill(stale)
+    const healed = loadCustomSkillsForClass("bellstrikeUmbra").find(
+      (skill) => skill.id === stale.id,
+    )!
+    expect(healed.receives).toEqual(["wolfchasersArtMartialDamage"])
+  })
+
+  it("leaves a Sword Martial Q skill the user has actually edited alone", () => {
+    const builtinSwordq = builtinSkillsForClass("bellstrikeUmbra").find(
+      (skill) => skill.id === "bellstrikeUmbra-swordq",
+    )!
+    const edited = { ...seedSkillFromBuiltin("bellstrikeUmbra", builtinSwordq), receives: [] }
+    saveCustomSkill(edited)
+    const reloaded = loadCustomSkillsForClass("bellstrikeUmbra").find(
+      (skill) => skill.id === edited.id,
+    )!
+    expect(reloaded.receives).toEqual([])
+  })
+
   it("leaves an already-authored debuff's receives alone, including an explicit empty one", () => {
     const builtinCombustion = builtinDebuffsForClass("bellstrikeUmbra").find(
-      (debuff) => debuff.id === "debuff-bellstrikeUmbra-combustion",
+      (debuff) => debuff.id === "debuff-mystic-combustion",
     )!
     const explicit = { ...builtinCombustion, receives: [] }
     saveCustomDebuff(explicit)
@@ -1055,7 +1323,7 @@ describe("skill/debuff reach heal (receives/triggersBuffs, no version bump)", ()
 
   it("carries an explicit triggersBuffs through save/load and export/import unchanged", () => {
     const builtinCombustion = builtinDebuffsForClass("bellstrikeUmbra").find(
-      (debuff) => debuff.id === "debuff-bellstrikeUmbra-combustion",
+      (debuff) => debuff.id === "debuff-mystic-combustion",
     )!
     const explicit = { ...builtinCombustion, triggersBuffs: ["mountainSplitter"] }
     saveCustomDebuff(explicit)
@@ -1070,7 +1338,7 @@ describe("skill/debuff reach heal (receives/triggersBuffs, no version bump)", ()
 
   it("leaves a stale debuff missing triggersBuffs without one — nothing to heal it from", () => {
     const builtinCombustion = builtinDebuffsForClass("bellstrikeUmbra").find(
-      (debuff) => debuff.id === "debuff-bellstrikeUmbra-combustion",
+      (debuff) => debuff.id === "debuff-mystic-combustion",
     )!
     const stale = { ...builtinCombustion }
     delete stale.triggersBuffs
@@ -1133,17 +1401,19 @@ describe("armor-set display name heal (wwm.inputs blob, no version bump)", () =>
     } catch {}
   })
 
-  it("a legacy wwm.inputs blob naming its set by display name rolls into a profile with the id", () => {
+  it("a legacy wwm.inputs blob naming its set by display name rolls into a profile with the current id", () => {
     saveInputs({ ...defaultInputs, set: "Hawking" })
     const { profiles } = loadProfiles()
     expect(profiles).toHaveLength(1)
-    expect(profiles[0].inputs.set).toBe("hawking")
+    expect(profiles[0].inputs.set).toBe("hawkwing")
   })
 
-  it("degrades an unrecognised legacy set to no set instead of leaving it dangling", () => {
-    saveInputs({ ...defaultInputs, set: "A Removed Set" })
+  it("keeps an unrecognised set stored and grants nothing for it", () => {
+    saveInputs({ ...defaultInputs, set: "A Set From Another Build" })
     const { profiles } = loadProfiles()
-    expect(profiles[0].inputs.set).toBeNull()
+    const stored = profiles[0].inputs
+    expect(stored.set).toBe("A Set From Another Build")
+    expect(applyArmorSet(stored)).toEqual(stored)
   })
 
   it("round-trips an already-migrated id unchanged", () => {
@@ -1234,6 +1504,73 @@ describe("class id degrade (an unrecognised classId falls back to the default bu
     expect(loadProfiles().profiles[0].inputs.classId).toBe(defaultInputs.classId)
   })
 
+  it("keeps a slotted inner way this build has no definition for", () => {
+    kvStore.set(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: LATEST_PROFILES_VERSION,
+        profiles: [
+          {
+            id: "p1",
+            name: "From another build",
+            inputs: {
+              ...defaultInputs,
+              mindMethods: [
+                { id: "innerWayFromAnotherBuild", name: "From Another Build", stacks: "tier 6" },
+                { name: "", stacks: "" },
+                { name: "", stacks: "" },
+                { name: "", stacks: "" },
+              ],
+            },
+          },
+        ],
+        activeId: "p1",
+      }),
+    )
+
+    const loaded = loadProfiles().profiles[0].inputs
+    expect(loaded.mindMethods[0].id).toBe("innerWayFromAnotherBuild")
+    expect(getMindMethodContributions(loaded)).toEqual({})
+  })
+
+  // The one thing hydration still takes off a profile, and why: this build has a
+  // definition for it, so leaving it slotted would score a build the class
+  // cannot hold.
+  it("clears a slotted inner way the class may not hold", () => {
+    const notForThisClass = allowedInnerWaysForClass("stonesplitStrength").find(
+      (innerWayId) => !allowedInnerWaysForClass("bellstrikeUmbra").includes(innerWayId),
+    )!
+    kvStore.set(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: LATEST_PROFILES_VERSION,
+        profiles: [
+          {
+            id: "p1",
+            name: "Wrong class",
+            inputs: {
+              ...defaultInputs,
+              classId: "bellstrikeUmbra",
+              mindMethods: [
+                { id: notForThisClass, name: "", stacks: "tier 6" },
+                { name: "", stacks: "" },
+                { name: "", stacks: "" },
+                { name: "", stacks: "" },
+              ],
+            },
+          },
+        ],
+        activeId: "p1",
+      }),
+    )
+
+    expect(loadProfiles().profiles[0].inputs.mindMethods[0]).toEqual({
+      id: undefined,
+      name: "",
+      stacks: "",
+    })
+  })
+
   it("the default build's own class id is a member of CLASS_IDS, so the degrade is a no-op on it", () => {
     expect(CLASS_IDS().includes(defaultInputs.classId)).toBe(true)
     localStorage.clear()
@@ -1272,5 +1609,118 @@ describe("class id degrade (an unrecognised classId falls back to the default bu
     const result = runEngine(applyBowSet(applyArmorSet(withDerivedStats(inputs))))
     expect(result.dps).toBeGreaterThan(0)
     expect(result.warnings.some((warning) => /error|exception/i.test(warning))).toBe(false)
+  })
+})
+
+describe("the stage attack talent rows follow the stored breakthrough (additive, no version bump)", () => {
+  const PROFILES_KEY = "wwm.profiles"
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  function storeProfileAt(breakthrough: number): void {
+    kvStore.set(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: LATEST_PROFILES_VERSION,
+        profiles: [
+          {
+            id: "p1",
+            name: "Stage test",
+            inputs: { ...defaultInputs, classId: "bellstrikeUmbra", breakthrough },
+          },
+        ],
+        activeId: "p1",
+      }),
+    )
+  }
+
+  function swordStage(talents: Inputs["martialArtsTalents"]): { min: number; max: number } {
+    const byName = Object.fromEntries(talents.map((talent) => [talent.name, talent]))
+    return {
+      min: byName["Sword Bellstrike Attack Min"].maxBonus,
+      max: byName["Sword Bellstrike Attack Max"].maxBonus,
+    }
+  }
+
+  it("hydrates a profile stored at breakthrough 18 with the 106/212 rows", () => {
+    storeProfileAt(18)
+    const { profiles } = loadProfiles()
+    expect(swordStage(profiles[0].inputs.martialArtsTalents)).toEqual({ min: 106, max: 212 })
+  })
+
+  it("hydrates a profile stored at breakthrough 17 with the 98/196 rows", () => {
+    storeProfileAt(17)
+    const { profiles } = loadProfiles()
+    expect(swordStage(profiles[0].inputs.martialArtsTalents)).toEqual({ min: 98, max: 196 })
+  })
+
+  it("hydrating twice is idempotent", () => {
+    storeProfileAt(18)
+    const first = loadProfiles().profiles[0].inputs.martialArtsTalents
+    const second = loadProfiles().profiles[0].inputs.martialArtsTalents
+    expect(second).toEqual(first)
+  })
+
+  it("the default build still hydrates to 98/196", () => {
+    const { profiles } = loadProfiles()
+    expect(swordStage(profiles[0].inputs.martialArtsTalents)).toEqual({ min: 98, max: 196 })
+  })
+})
+
+describe("disabledTalentPoints hydration (additive, no version bump)", () => {
+  const PROFILES_KEY = "wwm.profiles"
+
+  beforeEach(() => {
+    try {
+      kvStore.remove(PROFILES_KEY)
+    } catch {}
+  })
+  afterEach(() => {
+    try {
+      kvStore.remove(PROFILES_KEY)
+    } catch {}
+  })
+
+  function loadFirstWith(inputs: Record<string, unknown>): Inputs {
+    kvStore.set(
+      PROFILES_KEY,
+      JSON.stringify({
+        v: LATEST_PROFILES_VERSION,
+        profiles: [{ id: "p1", name: "Profile", inputs }],
+      }),
+    )
+    return loadProfiles().profiles[0].inputs
+  }
+
+  it("gives a profile saved before the field every talent node on", () => {
+    const legacy = { ...defaultInputs } as Record<string, unknown>
+    delete legacy.disabledTalentNodes
+    expect(loadFirstWith(legacy).disabledTalentNodes).toEqual([])
+  })
+
+  it("keeps a stored selection, sorted and deduplicated", () => {
+    const stored = { ...defaultInputs, disabledTalentNodes: [101501, 101071, 101501] }
+    expect(loadFirstWith(stored as unknown as Record<string, unknown>).disabledTalentNodes).toEqual(
+      [101071, 101501],
+    )
+  })
+
+  it("closes the chain over a stored node, so nothing behind it stays on", () => {
+    const stored = { ...defaultInputs, disabledTalentNodes: [101401] }
+    expect(loadFirstWith(stored as unknown as Record<string, unknown>).disabledTalentNodes).toEqual(
+      [101401, 101412, 101423, 101434],
+    )
+  })
+
+  it("keeps an id this build does not define rather than failing the load", () => {
+    const stored = { ...defaultInputs, disabledTalentNodes: ["1", null, 999999] }
+    expect(loadFirstWith(stored as unknown as Record<string, unknown>).disabledTalentNodes).toEqual(
+      [999999],
+    )
   })
 })

@@ -1,13 +1,11 @@
-import { useState } from "react"
 import { useI18n } from "../../../../i18n/i18nContext"
 import type { Inputs, Result } from "../../../../engine/types"
-import { SubTabs } from "../../../components/sub-tabs/SubTabs"
-import { SubTabPanel } from "../../../components/sub-tabs/SubTabPanel"
-import { RotationEditorPanel } from "../rotation-editor-panel/RotationEditorPanel"
 import { RotationOptionsPanel } from "../rotation-options-panel/RotationOptionsPanel"
 import { RotationBreakdownPanel } from "../rotation-breakdown-panel/RotationBreakdownPanel"
 import { RotationDpsGraphPanel } from "../rotation-dps-graph-panel/RotationDpsGraphPanel"
 import { RotationTimelinePanel } from "../rotation-timeline-panel/RotationTimelinePanel"
+import { BlossomTimelinePanel } from "../blossom-timeline-panel/BlossomTimelinePanel"
+import { BlossomPanel } from "../../overview/blossom-panel/BlossomPanel"
 import styles from "./RotationTab.module.scss"
 
 export function RotationTab({
@@ -22,49 +20,40 @@ export function RotationTab({
   result: Result
 }) {
   const { t } = useI18n()
-  const [sub, setSub] = useState<"overview" | "editor">("overview")
   return (
-    <>
-      <SubTabs
-        active={sub}
-        onSelect={setSub}
-        tabs={[
-          { key: "overview", label: t("common.overview") },
-          { key: "editor", label: t("rotation.rotationEditor") },
-        ]}
-      />
-      <SubTabPanel>
-        {sub === "overview" && (
-          <div className={styles.overviewLayout}>
-            <div className={`panel ${styles.optionsPanel}`}>
-              <h2>{t("common.rotations")}</h2>
-              <RotationOptionsPanel
-                inputs={inputs}
-                engineInputs={engineInputs}
-                onChange={onChange}
-                currentDps={result.dps}
-              />
-            </div>
-            <div className={styles.outputGrid}>
-              <div className="panel">
-                <h2>{t("rotation.dpsBreakdown")}</h2>
-                <RotationBreakdownPanel result={result} />
-              </div>
-              <div className="panel">
-                <h2>{t("rotation.dpsGraph")}</h2>
-                <RotationDpsGraphPanel result={result} />
-              </div>
-              <div className={`panel ${styles.spanColumns}`}>
-                <h2>{t("rotation.castTimeline")}</h2>
-                <RotationTimelinePanel result={result} />
-              </div>
-            </div>
+    <div className={styles.rotationLayout}>
+      <div className={`panel ${styles.optionsPanel}`}>
+        <h2>{t("common.rotations")}</h2>
+        <RotationOptionsPanel
+          inputs={inputs}
+          engineInputs={engineInputs}
+          onChange={onChange}
+          currentDps={result.dps}
+        />
+      </div>
+      <div className={styles.outputGrid}>
+        <div className="panel">
+          <h2>{t("rotation.dpsBreakdown")}</h2>
+          <RotationBreakdownPanel result={result} />
+        </div>
+        <div className="panel">
+          <h2>{t("rotation.dpsGraph")}</h2>
+          <RotationDpsGraphPanel result={result} />
+        </div>
+        {inputs.classId === "silkbindJade" && (
+          <div className={`panel ${styles.spanColumns}`}>
+            <BlossomTimelinePanel result={result} />
+            <details>
+              <summary>{t("overview.blossoms.assumptions")}</summary>
+              <BlossomPanel inputs={inputs} onChange={onChange} />
+            </details>
           </div>
         )}
-        {sub === "editor" && (
-          <RotationEditorPanel inputs={inputs} onChange={onChange} result={result} />
-        )}
-      </SubTabPanel>
-    </>
+        <div className={`panel ${styles.spanColumns}`}>
+          <h2>{t("rotation.castTimeline")}</h2>
+          <RotationTimelinePanel result={result} />
+        </div>
+      </div>
+    </div>
   )
 }

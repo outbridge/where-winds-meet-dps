@@ -1,7 +1,9 @@
 export const SET_ID = {
-  hawking: "hawking",
+  hawkwing: "hawkwing",
   jadeware: "jadeware",
   mistwillow: "mistwillow",
   rainwhisper: "rainwhisper",
   cleftpeak: "cleftpeak",
+  tiltrim: "tiltrim",
+  brimflow: "brimflow",
 } as const

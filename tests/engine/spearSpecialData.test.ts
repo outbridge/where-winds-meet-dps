@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { builtinSkillsForClass, builtinDebuffsForClass } from "../../src/engine/builtinLibrary"
 import {
-  RIVER_FLOW_BUFF_ID,
-  SPEAR_SPECIAL_COOLDOWN_BUFF_ID,
   RIVER_FLOW_DURATION_FRAMES,
+  SPEAR_SPECIAL_COOLDOWN_BUFF_ID,
   SPEAR_SPECIAL_COOLDOWN_FRAMES,
-} from "../../src/data/classes/bellstrike-umbra/gates"
+} from "../../src/data/innerWays/wolfchasersArtGates"
+import { BUFF } from "../../src/data/skills/buffs/ids"
 import {
   ZENITH_DETONATION_BUFF_ID,
   ZENITH_DETONATION_FRAMES,
@@ -14,6 +14,7 @@ import {
 import { builtinBuffsForClass } from "../../src/engine/builtinLibrary"
 import * as bellstrikeUmbra from "../../src/data/skills/bellstrike-umbra"
 import { UNIVERSAL_SKILLS } from "../../src/data/skills/universal"
+import { MYSTIC_SKILLS } from "../../src/data/skills/mystic"
 import { SKILL } from "../../src/data/skills/bellstrike-umbra/ids"
 
 const CLASS = "bellstrikeUmbra"
@@ -28,30 +29,28 @@ describe("built-in skill data — Spear Special / Spear Special (1 Hit Cancel)",
     expect(cancel).toHaveLength(1)
   })
 
-  it("base + River Flow variant coefficients match the workbook values; the cancel's base row is exactly half of Spear Special's", () => {
-    const hit = spearSpecial[0].hits[0]
-    expect(hit.physMultiplier).toBeCloseTo(1.7122, 10)
-    expect(hit.attributeMultiplier).toBeCloseTo(2.5683, 10)
-    expect(hit.physFixed).toBeCloseTo(474, 10)
-    expect(hit.attributeFixed).toBeCloseTo(258, 10)
+  it("base + River Flow variant coefficients split 0.40 / 0.60 across Spear Special's two hits; the cancel shares hit 1", () => {
+    const [first, second] = spearSpecial[0].hits
+    const total = (
+      field: "physMultiplier" | "attributeMultiplier" | "physFixed" | "attributeFixed",
+    ) => first[field] + second[field]
 
-    const variant = hit.variants![0]
-    expect(variant.physMultiplier).toBeCloseTo(2.5683, 10)
-    expect(variant.attributeMultiplier).toBeCloseTo(3.8524, 10)
-    expect(variant.physFixed).toBeCloseTo(711, 10)
-    expect(variant.attributeFixed).toBeCloseTo(387, 10)
+    expect(total("physMultiplier")).toBeCloseTo(1.712176, 10)
+    expect(total("attributeMultiplier")).toBeCloseTo(2.568264, 10)
+    expect(total("physFixed")).toBeCloseTo(474.4, 10)
+    expect(total("attributeFixed")).toBeCloseTo(258.4, 10)
+    expect(first.physMultiplier / total("physMultiplier")).toBeCloseTo(0.4, 6)
+    expect(second.physMultiplier / total("physMultiplier")).toBeCloseTo(0.6, 6)
 
-    const cancelHit = cancel[0].hits[0]
-    expect(cancelHit.physMultiplier).toBeCloseTo(hit.physMultiplier / 2, 10)
-    expect(cancelHit.attributeMultiplier).toBeCloseTo(hit.attributeMultiplier / 2, 10)
-    expect(cancelHit.physFixed).toBeCloseTo(hit.physFixed / 2, 10)
-    expect(cancelHit.attributeFixed).toBeCloseTo(hit.attributeFixed / 2, 10)
+    const totalVariant = (
+      field: "physMultiplier" | "attributeMultiplier" | "physFixed" | "attributeFixed",
+    ) => first.variants![0][field] + second.variants![0][field]
+    expect(totalVariant("physMultiplier")).toBeCloseTo(2.568264, 10)
+    expect(totalVariant("attributeMultiplier")).toBeCloseTo(3.852396, 10)
+    expect(totalVariant("physFixed")).toBeCloseTo(711.6, 10)
+    expect(totalVariant("attributeFixed")).toBeCloseTo(387.6, 10)
 
-    const cancelVariant = cancelHit.variants![0]
-    expect(cancelVariant.physMultiplier).toBeCloseTo(1.02732, 10)
-    expect(cancelVariant.attributeMultiplier).toBeCloseTo(1.54096, 10)
-    expect(cancelVariant.physFixed).toBeCloseTo(284.4, 10)
-    expect(cancelVariant.attributeFixed).toBeCloseTo(154.8, 10)
+    expect(cancel[0].hits).toEqual([first])
   })
 
   it("hit-0's six triggers: 3×applyDot(bleed), 1×castSkill(Blood Burst), 1×applyDebuff(Defense Down), 1×applyBuff(cooldown) LAST — never detonateDot — all gated by both River Flow ≥ 1 and cooldown = 0", () => {
@@ -76,7 +75,7 @@ describe("built-in skill data — Spear Special / Spear Special (1 Hit Cancel)",
       expect(applyBuffs[0].targetId).toBe(SPEAR_SPECIAL_COOLDOWN_BUFF_ID)
       expect(triggers[triggers.length - 1]).toBe(applyBuffs[0])
       for (const t of triggers) {
-        expect(t.condition).toEqual({ buffId: RIVER_FLOW_BUFF_ID, op: "gte", stacks: 1 })
+        expect(t.condition).toEqual({ buffId: BUFF.potentRiverFlow, op: "gte", stacks: 1 })
         expect(t.conditions).toEqual([
           { buffId: SPEAR_SPECIAL_COOLDOWN_BUFF_ID, op: "eq", stacks: 0 },
         ])
@@ -120,7 +119,7 @@ describe("built-in data — SpearQ's River Flow trigger", () => {
       expect(skill).toBeTruthy()
       skill.hits.forEach((hit, i) => {
         const hasRiverFlow = hit.triggers.some(
-          (t) => t.kind === "applyBuff" && t.targetId === RIVER_FLOW_BUFF_ID,
+          (t) => t.kind === "applyBuff" && t.targetId === BUFF.potentRiverFlow,
         )
         expect(hasRiverFlow).toBe(i === 4)
       })
@@ -139,6 +138,11 @@ describe("built-in data — one file per skill", () => {
         expect(fromModule).toEqual(s)
         continue
       }
+      const fromMystic = MYSTIC_SKILLS.find((m) => m.id === s.id)
+      if (fromMystic) {
+        expect(fromMystic).toEqual(s)
+        continue
+      }
       const universal = UNIVERSAL_SKILLS.find(
         (u) => u.id === s.id.replace(`${CLASS}-`, "universal-"),
       )
@@ -152,20 +156,20 @@ describe("built-in data — one file per skill", () => {
     }
   })
 
-  it("SpearQ 5-Hit Cancel's 5th hit lands on the cast's final frame", () => {
+  it("SpearQ 5-Hit Cancel's 5th hit lands before the cast ends", () => {
     const skill = builtinSkillsForClass(CLASS).find(
       (s) => s.id === "bellstrikeUmbra-spearq-5-hit-cancel",
     )!
     expect(skill.hits).toHaveLength(5)
-    expect(skill.hits[4].frame).toBe(skill.castFrames - 1)
+    expect(skill.hits[4].frame).toBeLessThan(skill.castFrames)
   })
 })
 
 describe("builtinBuffsForClass", () => {
-  it("bellstrikeUmbra carries River Flow, Spear Special Cooldown, Zenith Bar and Zenith Detonation, all effect-less state markers", () => {
+  it("bellstrikeUmbra carries River Flow with its own magnitude, and Spear Special Cooldown, Zenith Bar and Zenith Detonation as effect-less state markers", () => {
     const buffs = builtinBuffsForClass(CLASS)
     expect(buffs).toHaveLength(4)
-    const riverFlow = buffs.find((b) => b.id === RIVER_FLOW_BUFF_ID)!
+    const riverFlow = buffs.find((b) => b.id === BUFF.potentRiverFlow)!
     const cooldown = buffs.find((b) => b.id === SPEAR_SPECIAL_COOLDOWN_BUFF_ID)!
     const zenith = buffs.find((b) => b.id === ZENITH_DETONATION_BUFF_ID)!
     expect(riverFlow).toBeTruthy()
@@ -174,8 +178,11 @@ describe("builtinBuffsForClass", () => {
     expect(riverFlow.name).toBe("River Flow")
     expect(cooldown.name).toBe("Spear Special Cooldown")
     expect(zenith.name).toBe("Zenith Detonation")
-    for (const b of [riverFlow, cooldown, zenith]) {
+    expect(riverFlow.effects).toEqual([{ statKey: "allDamageBoost", amount: 0.25 }])
+    for (const b of [cooldown, zenith]) {
       expect(b.effects).toEqual([])
+    }
+    for (const b of [riverFlow, cooldown, zenith]) {
       expect(b.maxStacks).toBe(1)
       expect(b.activation).toBe("triggered")
       expect(b.scope).toBe("player")

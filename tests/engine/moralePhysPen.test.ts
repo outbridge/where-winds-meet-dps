@@ -49,7 +49,7 @@ describe("Morale Chant phys-penetration term", () => {
       hits,
     })
     const rotation = makeRotation("bellstrikeUmbra", {
-      steps: [makeStep({ skillId: skill.id, hitCount: 3 })],
+      steps: [makeStep({ skillId: skill.id })],
     })
     const inputs: Inputs = {
       ...baseInputs("bellstrikeUmbra", [
@@ -72,7 +72,7 @@ describe("Morale Chant phys-penetration term", () => {
       const inQiBreak = tSec >= 25 && tSec < 35
       const stacks = moraleStacksAtTime(tSec, inQiBreak)
       expect(stacks).toBeLessThanOrEqual(5)
-      const qiBreakBonus = inQiBreak && inputs.combatSettings?.qiBreak.enabled ? 0.1 : 0
+      const qiBreakBonus = inQiBreak ? 0.1 : 0
       const expected = computeSkillDamage(
         art("Test Weapon Hit") as never,
         buildContext({
@@ -81,8 +81,8 @@ describe("Morale Chant phys-penetration term", () => {
             ...inputs.phys,
             penetration: inputs.phys.penetration + stacks * MORALE_PEN_PER_STACK,
           },
-          allDamageBoost:
-            (inputs.allDamageBoost ?? 0) + stacks * moraleDmgPerStack(inQiBreak) + qiBreakBonus,
+          allDamageBoost: (inputs.allDamageBoost ?? 0) + stacks * moraleDmgPerStack(inQiBreak),
+          independentDamageBoost: qiBreakBonus,
         }),
         1,
       ).expectedDamage
@@ -108,7 +108,7 @@ describe("Morale Chant phys-penetration term", () => {
       hits: [hit],
     })
     const rotation = makeRotation("bellstrikeUmbra", {
-      steps: [makeStep({ skillId: skill.id, hitCount: 1 })],
+      steps: [makeStep({ skillId: skill.id })],
     })
     const inputs: Inputs = {
       ...baseInputs("bellstrikeUmbra", [
@@ -153,7 +153,7 @@ describe("Morale Chant phys-penetration term", () => {
       hits: [hit],
     })
     const rotation = makeRotation("bellstrikeUmbra", {
-      steps: [makeStep({ skillId: skill.id, hitCount: 1 })],
+      steps: [makeStep({ skillId: skill.id })],
     })
     const inputs: Inputs = {
       ...baseInputs("bellstrikeUmbra", [

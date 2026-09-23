@@ -25,9 +25,8 @@ kernel consumes. Category-1 base-stat buffs belong here (BUFFS.md).
 
 - A saved profile holds **no resolved stat fields**. They are recomputed on
   every load, so never persist a derived stat.
-- Bumping a base-stat configuration means editing the JSON table **and** the
-  constant that selects which keys are summed. Adding a table key alone changes
-  nothing.
+- Bumping a base-stat configuration means editing the level row **and** the
+  summation that consumes it. Adding a row field alone changes nothing.
 - The base-stat row and the runtime level bonus must read the **same** level
   constant. Two sources drift silently.
 - A per-point attribute conversion is authored **once**, and every consumer
@@ -58,34 +57,52 @@ anything rate-shaped. Two rules bind here:
   is always 1, and the counters are always zero. Do not build a mechanic that
   depends on either; the qi phase reaches the kernel through buff effects and
   per-hit art patches instead.
+- **A target-side reduction subtracts inside the bracket it opposes; it is never
+  an addend in the additive boost total.** A whole-damage reduction is its own
+  factor in the shared tail every row passes through, so it reaches a
+  damage-over-time tick and an ordinary hit alike. A damage-boost bracket is
+  floored at zero after the subtraction, and a crit- or affinity-damage
+  reduction applies **before** that multiplier's clamp, so it is clamped with
+  everything else.
+- **An independent damage boost is its own multiplicative factor in the shared
+  tail every row passes through, never an addend in the additive boost
+  total.**
 
 ## Calculation rules
 
-Four corrections apply **unconditionally**, from the external sources below.
+Three corrections apply **unconditionally**, from the external sources below.
 They have no cached anchor — `tests/engine/damageRules.test.ts` is the only
 guard, and it is directional.
 
 1. **Graze/abrasion rate** is `(1 − precision) × (1 − affinity)`, not
-   `1 − precision` (PDF §8). Differs only below 100 % precision.
+   `1 − precision` (PDF §8). Differs only below 100 % precision. An
+   abrasion-avoid fraction scales this rate down further, and the mass it
+   removes lands on the normal row, never on crit.
 2. **Penetration** uses net `(pen − resistance)`, `÷100` when net ≤ 0 (deficit
    at full weight) and `÷200` when net > 0 (overflow halved), for the physical
-   and every attribute track. ⚠️ This deliberately **inverts PDF §7** — the CN
-   sources' worked examples go the other way, and the PDF-literal branch
-   inflated the pen term about 2×. **Do not "fix" it back.**
-3. **DoT rows** lose the elevated matching-path scaling (PDF §1) — the
-   non-matching multiplier applies to every attribute path. This is gated per
-   hit by `elevatedAttributeMultiplier`, which **defaults true**. Only a genuine
-   DoT tick sets it false; a burst that is `sustain`-tagged for buff routing is
-   not a DoT and keeps the default. **Flat damage is never stripped.** A tick
-   deals the flat its own data authors — the data states the tick's shape, so
-   author zero to mean zero.
-4. **A skill's raw affinity-rate bonus** divides by `(1 + resistance)` and falls
-   **inside** the cap (PDF §11), while **a skill's raw crit-rate bonus is flat**
-   and added **after** the cap — so a charged hit can exceed the plain crit cap.
-   Direct rates stay flat.
+   and every attribute track. ⚠️ This **corrects PDF §7** — the CN sources'
+   worked examples go the other way, and the PDF-literal branch inflated the
+   pen term about 2×. **Do not "fix" it back.**
+3. **A skill's own rate bonus** — crit and affinity alike — is added undivided
+   onto the already-resisted panel rate, floored at zero, and falls **inside**
+   the cap (PDF §11). The direct rate is added **after** the cap, unaffected by
+   resistance.
 
-**Penetration resistance is zero for every target.** PvE targets carry none.
-The plumbing stays so real values can slot in if a target ever has any.
+**The martial art's attribute multiplier applies to every row alike, its flat
+term together with its coefficient** — a damage-over-time tick included.
+Nothing demotes a row to the non-matching coefficient by default;
+`elevatedAttributeMultiplier` still exists per row and defaults true, for a
+data module that has a genuine reason to set it false — and a row that does
+demotes both terms together, never one without the other.
+
+**Penetration resistance is zero for every target below breakthrough 20, and
+non-zero from breakthrough 20 on.** It is read off the target's own
+breakthrough, the same way its defense is.
+
+**A per-hit bonus that scales a row's flat terms scales the physical and
+attribute flat term alike, and applies before the martial art's
+attribute-flat multiplier** so the two compose multiplicatively in that
+order. It never reaches either coefficient term.
 
 ### Sources of truth
 
@@ -103,7 +120,7 @@ Midasione.pdf`. Primary reference (§1 base damage, §8 hit outcomes, §11 rate
    overflow-halved worked examples; crit and affinity base multipliers.
 3. **GamerSky PVE数值系统与伤害公式解析** —
    <https://www.gamersky.com/handbook/202512/2063097.shtml>. Target defense and
-   pen resistance ≈ 0; DoT rules; overall PVE structure.
+   pen resistance ≈ 0; overall PVE structure.
 4. **16yanyun 三率攻略** —
    <https://16yanyun.com/gameguide/yanyun-three-rates-attributes-guide>. Rate
    caps, precision-first judgment, affinity-overrides-crit.
@@ -119,7 +136,9 @@ An inner way can reshape the calculation in three places. The buckets are
 1. **Flat tier stats** — the module's own always-on and per-tier `panelStats`,
    folded in during the derive. Always-on stat adds, invisible to the Skill
    Editor. Tiers that are individually selectable carry their stats on the tier
-   rather than unconditionally.
+   rather than unconditionally. A tier stat that moves with the character
+   breakthrough is a `ladder`, resolved against the build's breakthrough at
+   derive time; a breakthrough outside the ladder takes its nearest row.
 2. **Context scalars** — the module's `scalars` block, summed across slotted
    inner ways. `minTier` gates the whole block. No engine file may name an inner
    way to read one.
@@ -142,8 +161,8 @@ A mechanic is the escape hatch for what the def schema cannot express — a
 stochastic per-hit roll, a stacking-and-decaying reduction, a stateful counter.
 
 - **Declared by the thing it is a mechanic of** — its class, its inner way, its
-  gear set. `src/engine/mechanics/` holds only the contract and the registry:
-  **no instances**.
+  gear set, its consumable. `src/engine/mechanics/` holds only the contract and
+  the registry: **no instances**.
 - **Registry order is load-bearing.** Contributions apply in it and float
   addition is not associative. The memo signature is derived from what a
   mechanic returns, never hand-appended.

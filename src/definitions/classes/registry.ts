@@ -7,17 +7,23 @@
 // own `gateBuffs` plus the gates every inner way it can slot declares, each
 // stamped with this class's id), the attunement option list (global,
 // because a saved gear piece must resolve its attunement id regardless of
-// which class equipped it), and the composed `buffModules` list (every
-// slottable inner way's `buffDefs` plus the class's own `classBuffDefs`).
-// `classDefinition()` composes all three onto the declared `ClassDef` so
-// callers read one shape either way.
+// which class equipped it), the composed `buffModules` list (every
+// slottable inner way's `buffDefs` plus the class's own `classBuffDefs`),
+// and the mystic arts, which belong to no class and are appended to every
+// class's skill and debuff lists as authored. `classDefinition()` composes
+// all of them — and the class's graduation builds, collected by class id only
+// here because a build module's gear pulls the ranking layer back into this
+// registry at load — onto the declared `ClassDef` so callers read one shape either
+// way.
 import type { Buff } from "../../engine/buff"
 import type { BuffModule } from "../../engine/buffs/buffModule"
 import type { AttunementOption } from "../../engine/attunements"
+import type { AttributeKey } from "../../engine/types"
 import { attunementsForClass } from "../../engine/attunements"
 import { builtinBuffsForClass, registerBuiltinBuffs } from "../../engine/builtinBuffs"
 import type { ClassDef, RetunementPool } from "./classDef"
 import { CLASSES, RETUNEMENT_POOLS } from "../../data/classes"
+import { MYSTIC_DEBUFFS, MYSTIC_SKILLS } from "../../data/skills/mystic"
 import { registerMechanic } from "../../engine/mechanics"
 import { registerSkillBehavior } from "../../engine/behavior"
 import { registerDisplayGate } from "../../engine/buffs/displayGates"
@@ -26,6 +32,8 @@ import { INNER_WAYS, innerWayDefinition } from "../innerWays/registry"
 import type { InnerWayDef } from "../innerWays/innerWayDef"
 import { martialArtDefinition } from "../martialArts/registry"
 import type { MartialArtDef } from "../martialArts/martialArtDef"
+import { graduationBuildsFor } from "../graduationBuilds/registry"
+import type { GraduationBuild } from "../graduationBuilds/graduationBuildDef"
 
 function innerWayIdsOf(classDef: ClassDef): readonly string[] {
   return [...new Set([classDef.classMindGroup, ...classDef.allowedMindMethods].filter(Boolean))]
@@ -79,6 +87,7 @@ export interface ClassDefinition extends ClassDef {
   // (`engine/buffs/data.ts`) folds in separately, between these two blocks.
   buffModules: readonly BuffModule[]
   attunements: readonly AttunementOption[]
+  graduationBuilds: readonly GraduationBuild[]
 }
 
 const cache = new Map<string, ClassDefinition | null>()
@@ -95,6 +104,8 @@ export function classDefinition(classId: string): ClassDefinition | null {
 
   const definition: ClassDefinition = {
     ...classDef,
+    skills: [...classDef.skills, ...MYSTIC_SKILLS],
+    debuffs: [...classDef.debuffs, ...MYSTIC_DEBUFFS],
     innerWays: innerWayIdsOf(classDef),
     martialArts: martialArtsOf(classDef),
     buffs: builtinBuffsForClass(classId),
@@ -103,13 +114,18 @@ export function classDefinition(classId: string): ClassDefinition | null {
       ...classDef.classBuffDefs,
     ],
     attunements: attunementsForClass(classId),
+    graduationBuilds: graduationBuildsFor(classId),
   }
   cache.set(classId, definition)
   return definition
 }
 
+export function attributeForClass(classId: string): AttributeKey | null {
+  return CLASSES.find((classDef) => classDef.id === classId)?.primaryAttribute ?? null
+}
+
 export function poolForClass(classId: string): RetunementPool | null {
-  const attribute = CLASSES.find((classDef) => classDef.id === classId)?.primaryAttribute
+  const attribute = attributeForClass(classId)
   return (attribute && RETUNEMENT_POOLS[attribute]) ?? null
 }
 

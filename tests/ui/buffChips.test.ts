@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
+  buffChipAbbreviation,
   buffChipHue,
   castBuffDisplayOrder,
   visibleCastBuffs,
+  COOLDOWN_BUFF_HUE,
   FALLBACK_BUFF_HUES,
 } from "../../src/ui/features/rotation/buffChips"
 import { hiddenTimelineBuffIds } from "../../src/engine/buffs/catalog"
@@ -54,7 +56,6 @@ describe("buffChipHue", () => {
       "Concentration",
       "Hawkwing (4-pc)",
       "Zenith Detonation",
-      "Spear Special Cooldown",
     ]
     for (const name of names) {
       const first = buffChipHue(name)
@@ -65,7 +66,7 @@ describe("buffChipHue", () => {
   })
 
   it("never returns a pinned hue for an unpinned name", () => {
-    const pinned = new Set([0, 30, 200, 100, 130])
+    const pinned = new Set([0, 30, 200, 100, 130, COOLDOWN_BUFF_HUE])
     const names = [
       "River Flow",
       "Soul Shaken",
@@ -74,11 +75,39 @@ describe("buffChipHue", () => {
       "Concentration",
       "Hawkwing (4-pc)",
       "Zenith Detonation",
-      "Spear Special Cooldown",
     ]
     for (const name of names) {
       expect(pinned.has(buffChipHue(name))).toBe(false)
     }
+  })
+
+  it("colours every cooldown status gold", () => {
+    expect(buffChipHue("Spear Special Cooldown")).toBe(COOLDOWN_BUFF_HUE)
+    expect(buffChipHue("Eonpour - Peakfall Cooldown")).toBe(COOLDOWN_BUFF_HUE)
+    expect(FALLBACK_BUFF_HUES).not.toContain(COOLDOWN_BUFF_HUE)
+  })
+})
+
+describe("buffChipAbbreviation", () => {
+  it("keeps the first letter of every word", () => {
+    expect(buffChipAbbreviation("River Flow")).toBe("RF")
+    expect(buffChipAbbreviation("Bleeding")).toBe("B")
+    expect(buffChipAbbreviation("Morale Chant")).toBe("MC")
+    expect(buffChipAbbreviation("Bitter Season Poison")).toBe("BSP")
+  })
+
+  it("splits on hyphens and collapsed whitespace as well as spaces", () => {
+    expect(buffChipAbbreviation("Ever-Bright  Vow")).toBe("EBV")
+  })
+
+  it("uppercases a lowercase word and keeps a leading digit", () => {
+    expect(buffChipAbbreviation("way of the blade")).toBe("WOTB")
+    expect(buffChipAbbreviation("7 Star Step")).toBe("7SS")
+  })
+
+  it("falls back to the name when it holds no words", () => {
+    expect(buffChipAbbreviation("   ")).toBe("   ")
+    expect(buffChipAbbreviation("")).toBe("")
   })
 })
 

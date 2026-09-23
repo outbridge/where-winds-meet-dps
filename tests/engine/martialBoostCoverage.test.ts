@@ -10,6 +10,7 @@ import { makeRotation, makeStep } from "../../src/engine/rotation"
 import type { Inputs } from "../../src/engine/types"
 import { dotRow, skillRow } from "../builtins"
 import { DEBUFF, SKILL } from "../../src/data/skills/bellstrike-umbra/ids"
+import { DEBUFF as MYSTIC_DEBUFF } from "../../src/data/skills/mystic/ids"
 
 const CLASS = "bellstrikeUmbra"
 
@@ -18,7 +19,7 @@ function rotationOf(skillNames: string[]) {
   const steps = skillNames.map((name) => {
     const skill = skills.find((s) => s.name === name)
     if (!skill) throw new Error(`no built-in skill "${name}" for bellstrikeUmbra`)
-    return makeStep({ skillId: skill.id, hitCount: skill.hits.length })
+    return makeStep({ skillId: skill.id })
   })
   return makeRotation("bellstrikeUmbra", { name: `test-${skillNames.join("+")}`, steps })
 }
@@ -38,9 +39,14 @@ function damageOf(result: ReturnType<typeof simulateTimeline>, name: string): nu
     .reduce((sum, p) => sum + p.expectedDamage, 0)
 }
 
-// 6 hits of the canDetonate 3-hit skill ⇒ bleed ticks plus exactly one
-// detonation (see bleedDetonation.test.ts).
-const BLEED_ROTATION = ["SwordSpecial 3-Hit", "SwordSpecial 3-Hit"]
+// Four casts, not two: a tick lands only once the window outlasts the
+// stack-reset gap a detonation opens (see bleedDetonation.test.ts).
+const BLEED_ROTATION = [
+  "SwordSpecial 3-Hit",
+  "SwordSpecial 3-Hit",
+  "SwordSpecial 3-Hit",
+  "SwordSpecial 3-Hit",
+]
 const BURST_ROTATION = ["Dragon's Breath 1 Hit", "Poet1", "Poet2"]
 
 describe("all-martial and sword boost reach every Sword-typed row", () => {
@@ -79,7 +85,7 @@ describe("mystic skills and their DoTs take neither weapon boost", () => {
   it("allMartialBoost and swordBoost leave a burst-mystic rotation (incl. Combustion DoT) untouched", () => {
     const base = simulate(BURST_ROTATION)
     const boosted = simulate(BURST_ROTATION, { allMartialBoost: 0.1, swordBoost: 0.1 })
-    expect(damageOf(base, dotRow(CLASS, DEBUFF.combustion))).toBeGreaterThan(0)
+    expect(damageOf(base, dotRow(CLASS, MYSTIC_DEBUFF.combustion))).toBeGreaterThan(0)
     expect(boosted.totalDamage).toBe(base.totalDamage)
   })
 

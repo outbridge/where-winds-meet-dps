@@ -1,6 +1,6 @@
-// No imports of its own. Every value byte-identical to the current JSON —
-// this file PINS ids, it does not mint new ones.
 export const SKILL = {
+  umbdronelaunch: "silkbindJade-umbdronelaunch",
+  umbdrone: "silkbindJade-umbdrone",
   umbq: "silkbindJade-umbq",
   umbqPrepull: "silkbindJade-umbq-prepull",
   umblightcharge: "silkbindJade-umblightcharge",
@@ -27,9 +27,7 @@ export const SKILL = {
 } as const
 
 export const DEBUFF = {
-  toadPoison: "debuff-silkbindJade-toad-poison",
-  combustion: "debuff-silkbindJade-combustion",
-  fluteRipple: "debuff-silkbindJade-flute-ripple",
+  umbdrone: "debuff-silkbindJade-umbdrone",
   umbdrone12Hit: "debuff-silkbindJade-umbdrone-12hit",
   umbdrone16Hit: "debuff-silkbindJade-umbdrone-16hit",
   umbdrone20Hit: "debuff-silkbindJade-umbdrone-20hit",

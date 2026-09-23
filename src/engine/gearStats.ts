@@ -1,11 +1,14 @@
-import type { GearPiece, Inputs } from "./types"
+import type { GearLevel, GearPiece, Inputs } from "./types"
 import { isWeaponSlot } from "./types"
 import { gearBaseStatsFor } from "../data/stats/gearBaseStats"
+import { gearWordPoolForLine } from "../data/stats/gearWordPools"
 import { getWordSpecs } from "./itemRanking"
 import { getAttunement } from "./attunements"
 import { addStatDelta, resolveEnginePath } from "./statPaths"
 
 export const RELAYED_FACTOR = 0.94
+
+const FORMLESS_ATTACK_WORDS: ReadonlySet<string> = new Set(["minFormless", "maxFormless"])
 
 // Kept to the precision the UI shows — two decimals, which for a percent word
 // means four on the stored fraction.
@@ -56,6 +59,7 @@ const NUMERIC_PATHS = [
   "dualKnivesBoost",
   "ropeDartBoost",
   "hengDaoBoost",
+  "gauntletsBoost",
   "bossBoost",
   "singleMysticBoost",
   "areaMysticBoost",
@@ -87,6 +91,42 @@ function diffNumeric(before: Inputs, after: Inputs): GearContribution {
   return out
 }
 
+function wordContribution(
+  piece: GearPiece,
+  ctx: Inputs,
+  accepts: (word: string) => boolean,
+): GearContribution {
+  const out: GearContribution = []
+  const specs = getWordSpecs(ctx, piece.level)
+  piece.words.forEach((w, lineIndex) => {
+    if (!w.word || !accepts(w.word) || !w.value) return
+    const pool = gearWordPoolForLine(piece.level, piece.slot, lineIndex)
+    if (!pool.includes(w.word)) return
+    const spec = specs.find((s) => s.word === w.word)
+    if (!spec) return
+    const after = spec.apply(ctx, w.value)
+    out.push(...diffNumeric(ctx, after))
+  })
+  return out
+}
+
+// A Formless word lands on the same paths an attribute word does, so the word
+// it came from is the only thing that tells the two apart.
+export function formlessWordTotals(
+  pieces: readonly GearPiece[],
+  ctx: Inputs,
+): { min: number; max: number } {
+  let min = 0
+  let max = 0
+  for (const piece of pieces) {
+    for (const entry of wordContribution(piece, ctx, (word) => FORMLESS_ATTACK_WORDS.has(word))) {
+      if (entry.path.endsWith(".min")) min += entry.amount
+      if (entry.path.endsWith(".max")) max += entry.amount
+    }
+  }
+  return { min, max }
+}
+
 export function computeGearContribution(piece: GearPiece, ctx: Inputs): GearContribution {
   const out: GearContribution = []
 
@@ -99,18 +139,7 @@ export function computeGearContribution(piece: GearPiece, ctx: Inputs): GearCont
     if (base.physDef) out.push({ path: "physDef", amount: base.physDef })
   }
 
-  const specs = getWordSpecs(ctx)
-  for (const w of piece.words) {
-    if (!w.word) continue
-    const spec = specs.find((s) => s.word === w.word)
-    if (!spec || !spec.amount) continue
-    const scale = w.value / spec.amount
-    if (!scale) continue
-    const after = spec.apply(ctx)
-    for (const d of diffNumeric(ctx, after)) {
-      out.push({ path: d.path, amount: d.amount * scale })
-    }
-  }
+  out.push(...wordContribution(piece, ctx, () => true))
 
   if (piece.attunement && piece.attunementValue) {
     const opt = getAttunement(piece.attunement)
@@ -148,14 +177,32 @@ export function gearAttributeTotals(pieces: readonly GearPiece[]): {
   let agility = 0
   let momentum = 0
   for (const p of pieces) {
-    for (const w of p.words) {
-      if (!w.word || !w.value) continue
+    p.words.forEach((w, lineIndex) => {
+      if (!w.word || !w.value) return
+      const pool = gearWordPoolForLine(p.level, p.slot, lineIndex)
+      if (!pool.includes(w.word)) return
       if (w.word === "power") power += w.value
       else if (w.word === "agility") agility += w.value
       else if (w.word === "momentum") momentum += w.value
-    }
+    })
   }
   return { power, agility, momentum }
+}
+
+export function gearHpTotal(pieces: readonly GearPiece[]): number {
+  let hp = 0
+  for (const piece of pieces) {
+    if (!isWeaponSlot(piece.slot)) hp += gearBaseStatsFor(piece).hp
+  }
+  return hp
+}
+
+export function gearPhysDefTotal(pieces: readonly GearPiece[]): number {
+  let physDef = 0
+  for (const piece of pieces) {
+    if (!isWeaponSlot(piece.slot)) physDef += gearBaseStatsFor(piece).physDef
+  }
+  return physDef
 }
 
 function clonePieceShape(i: Inputs): Inputs {
@@ -181,8 +228,8 @@ export function applyPieceContribution(inputs: Inputs, piece: GearPiece, sign: 1
   return next
 }
 
-export function maxRelayedClone(piece: GearPiece, ctx: Inputs): GearPiece {
-  const specs = getWordSpecs(ctx)
+export function maxRelayedClone(piece: GearPiece, ctx: Inputs, level: GearLevel): GearPiece {
+  const specs = getWordSpecs(ctx, level)
   const upgraded = piece.words.map((w) => {
     if (!w.word) return w
     const spec = specs.find((s) => s.word === w.word)

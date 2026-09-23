@@ -1,12 +1,19 @@
 import type { Inputs } from "../../../engine/types"
 import { withDerivedStats, equippedPiecesFor } from "../../../engine/derivedInputs"
-import { totalPlayerAttributes } from "../../../definitions/baseStats"
+import {
+  effectiveMaxHp,
+  totalFormlessAttack,
+  totalMaxHp,
+  totalPhysDef,
+  totalPlayerAttributes,
+} from "../../../definitions/baseStats"
 import { FOOD_MIN_PHYS_BONUS, FOOD_MAX_PHYS_BONUS } from "../../../engine/formula"
 import { attunementLabel, attunementLabelKey, getAttunement } from "../../../engine/attunements"
 import { applyArmorSet, applyBowSet, effectiveRates, getSchool } from "../../../engine/panel"
+import { resolveEnginePath } from "../../../engine/statPaths"
 import { useI18n } from "../../../i18n/i18nContext"
 import { fmt, PERCENT_PATHS, readPath, statPathLabel } from "../../utils/statFormatting"
-import { finalCritAffinityRates } from "./finalCritAffinityRates"
+import { finalHitOutcomeRates } from "./finalHitOutcomeRates"
 import styles from "./StatsOverviewPanel.module.scss"
 
 interface Props {
@@ -38,6 +45,7 @@ const MARTIAL_BOOST_PATHS = [
   "dualKnivesBoost",
   "ropeDartBoost",
   "hengDaoBoost",
+  "gauntletsBoost",
 ]
 
 const TARGET_BOOST_PATHS = ["bossBoost", "singleMysticBoost", "areaMysticBoost"]
@@ -48,6 +56,7 @@ interface RowEntry {
   effective?: number
   isPercent: boolean
   isPenetration?: boolean
+  hint?: string
 }
 
 function row(
@@ -68,7 +77,7 @@ export function StatsOverviewPanel({ inputs }: Props) {
   const withSets = applyBowSet(applyArmorSet(derived))
 
   const eff = effectiveRates(withSets)
-  const finalRates = finalCritAffinityRates({
+  const finalRates = finalHitOutcomeRates({
     precision: eff.precision,
     critRate: eff.critRate,
     directCritRate: withSets.directCritRate,
@@ -76,11 +85,49 @@ export function StatsOverviewPanel({ inputs }: Props) {
     directAffinityRate: withSets.directAffinityRate,
   })
 
-  const attrs = totalPlayerAttributes(inputs.breakthrough, equippedPiecesFor(inputs))
+  const equippedPieces = equippedPiecesFor(inputs)
+  const attrs = totalPlayerAttributes(
+    inputs.breakthrough,
+    equippedPieces,
+    inputs.disabledTalentNodes,
+  )
+  const maxHp = totalMaxHp(
+    inputs.breakthrough,
+    equippedPieces,
+    inputs.disabledTalentNodes,
+    inputs.enhancements,
+    inputs.unclaimedOddityNodes,
+    inputs.arsenalScores,
+  )
+  const maxHpEffective = effectiveMaxHp(
+    inputs.breakthrough,
+    equippedPieces,
+    inputs.disabledTalentNodes,
+    inputs.enhancements,
+    inputs.unclaimedOddityNodes,
+    inputs.arsenalScores,
+  )
+  const physDef = totalPhysDef(
+    inputs.breakthrough,
+    equippedPieces,
+    inputs.disabledTalentNodes,
+    inputs.enhancements,
+    inputs.unclaimedOddityNodes,
+  )
   const attributeRows: RowEntry[] = [
     row(t("content.statLine.power"), attrs.power, false),
     row(t("content.statLine.agility"), attrs.agility, false),
     row(t("content.statLine.momentum"), attrs.momentum, false),
+    row(t("content.statLine.body"), attrs.body, false),
+    row(t("content.statLine.defense"), attrs.defense, false),
+    {
+      label: t("content.statLine.maxHp"),
+      value: maxHp,
+      effective: maxHpEffective,
+      isPercent: false,
+      hint: t("components.statsOverviewPanel.maxHpArsenalNote"),
+    },
+    row(t("content.statLine.physDef"), physDef, false),
   ]
 
   const rateRows: RowEntry[] = [
@@ -91,6 +138,13 @@ export function StatsOverviewPanel({ inputs }: Props) {
     row(statPathLabel("directAffinityRate", t), withSets.directAffinityRate, true),
     row(t("components.statsOverviewPanel.finalCrit"), finalRates.critRate, true),
     row(t("components.statsOverviewPanel.finalAffinity"), finalRates.affinityRate, true),
+    row(
+      t("components.statsOverviewPanel.finalCritAffinity"),
+      finalRates.critRate + finalRates.affinityRate,
+      true,
+    ),
+    row(t("components.statsOverviewPanel.finalAbrasion"), finalRates.abrasionRate, true),
+    row(t("components.statsOverviewPanel.finalNormal"), finalRates.normalRate, true),
   ]
 
   const physMin = readPath(withSets, "phys.min")
@@ -118,20 +172,29 @@ export function StatsOverviewPanel({ inputs }: Props) {
       true,
     ),
   ]
+  const formless = totalFormlessAttack(inputs, equippedPieces)
+  const primaryMinPath = resolveEnginePath("primaryAttr.min", inputs)
+  const primaryMaxPath = resolveEnginePath("primaryAttr.max", inputs)
   for (const key of ATTRIBUTE_BLOCKS) {
-    const min = readPath(withSets, `${key}.min`)
-    const max = readPath(withSets, `${key}.max`)
+    const ownMin =
+      readPath(withSets, `${key}.min`) - (`${key}.min` === primaryMinPath ? formless.min : 0)
+    const ownMax =
+      readPath(withSets, `${key}.max`) - (`${key}.max` === primaryMaxPath ? formless.max : 0)
     const pen = readPath(withSets, `${key}.penetration`)
-    if (min !== 0 || max !== 0) {
+    if (ownMin !== 0 || ownMax !== 0) {
       attackRows.push(
-        row(statPathLabel(`${key}.min`, t), min, false),
-        row(statPathLabel(`${key}.max`, t), max, false),
+        row(statPathLabel(`${key}.min`, t), ownMin, false),
+        row(statPathLabel(`${key}.max`, t), ownMax, false),
       )
     }
     if (pen !== 0) {
       penetrationRows.push(row(statPathLabel(`${key}.penetration`, t), pen, false, undefined, true))
     }
   }
+  attackRows.push(
+    row(t("content.statLine.minFormless"), formless.min, false),
+    row(t("content.statLine.maxFormless"), formless.max, false),
+  )
 
   const damageBoostRows: RowEntry[] = DAMAGE_BOOST_PATHS.map((path) =>
     row(statPathLabel(path, t), readPath(withSets, path), PERCENT_PATHS.has(path)),
@@ -178,7 +241,7 @@ function Section({ title, rows }: { title: string; rows: RowEntry[] }) {
       <div className={styles.statsOverviewGrid}>
         {rows.map((entry, index) => (
           <div key={index} className={styles.statsOverviewRow}>
-            <div className={styles.statsOverviewLabel} title={entry.label}>
+            <div className={styles.statsOverviewLabel} title={entry.hint ?? entry.label}>
               {entry.label}
             </div>
             <div className={styles.statsOverviewValue}>

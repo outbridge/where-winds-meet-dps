@@ -179,8 +179,8 @@ Power +46.4
   it("keeps duplicate words, each with its own value", () => {
     const { piece } = parseGearScreenshot(TRANSCRIPT_B, inputs, FALLBACK_SLOT)
 
-    expect(piece.words[0]).toEqual({ word: "maxVoidAttack", value: 41.3, retuned: false })
-    expect(piece.words[1]).toEqual({ word: "maxVoidAttack", value: 41.2, retuned: false })
+    expect(piece.words[0]).toEqual({ word: "maxFormless", value: 41.3, retuned: false })
+    expect(piece.words[1]).toEqual({ word: "maxFormless", value: 41.2, retuned: false })
   })
 
   it("leaves an unreadable stat name unresolved and names the row in the report, never resolving to the nearest label", () => {
@@ -200,15 +200,32 @@ Physical Penetration +10.7
     expect(fields.words[0]).toEqual({ confidence: "unresolved", rawText: "Zzqxxq Nonsense +12.3" })
   })
 
+  it("leaves a cleanly-read name unresolved when the un-retuned first line can never draw it", () => {
+    const transcript = `
+Mystery Weapon
+Relaying · Tier 96
+Affinity Rate +4.1%
+Momentum +45.9
+Max Physical Attack +73.1
+Power +46.4
+Power +46.4
+Physical Penetration +10.7
+`
+    const { piece, fields } = parseGearScreenshot(transcript, inputs, FALLBACK_SLOT)
+
+    expect(piece.words[0].word).toBe("")
+    expect(fields.words[0].confidence).toBe("unresolved")
+  })
+
   it("keeps a value above the relayed ceiling instead of clamping it, and flags the row", () => {
     const transcript = `
 Clamp Test
 Relaying · Tier 96
-Power +99.9
+Momentum +99.9
 `
     const { piece, fields } = parseGearScreenshot(transcript, inputs, FALLBACK_SLOT)
 
-    expect(piece.words[0]).toEqual({ word: "power", value: 99.9, retuned: false })
+    expect(piece.words[0]).toEqual({ word: "momentum", value: 99.9, retuned: false })
     expect(fields.words[0].confidence).toBe("guessed")
   })
 
@@ -242,12 +259,12 @@ Power +40.0
     const transcript = `
 No Relay Test
 Tier 96
-Power +99.9
+Momentum +99.9
 `
     const { piece, fields } = parseGearScreenshot(transcript, inputs, FALLBACK_SLOT)
 
     expect(piece.relayed).toBe(false)
-    expect(piece.words[0]).toEqual({ word: "power", value: 99.9, retuned: false })
+    expect(piece.words[0]).toEqual({ word: "momentum", value: 99.9, retuned: false })
     expect(fields.words[0].confidence).toBe("guessed")
   })
 
@@ -292,7 +309,7 @@ Relaying · Tier 96
 `
     const { piece } = parseGearScreenshot(transcript, inputs, FALLBACK_SLOT)
 
-    expect(piece.words[0]).toEqual({ word: "maxVoidAttack", value: 41.3, retuned: false })
+    expect(piece.words[0]).toEqual({ word: "maxFormless", value: 41.3, retuned: false })
   })
 
   it("treats an attunement row with no numeric value as an unrolled attunement, not a failure", () => {
@@ -468,8 +485,8 @@ Boost +5.8% epic
   it("flags two misread values above their word's cap instead of clamping them, on mirageVeilbright.png", () => {
     const { piece, fields } = parseGearScreenshot(REAL_MIRAGE_VEILBRIGHT, inputs, FALLBACK_SLOT)
 
-    expect(piece.words[0]).toEqual({ word: "maxVoidAttack", value: 417.3, retuned: false })
-    expect(piece.words[1]).toEqual({ word: "maxVoidAttack", value: 417.2, retuned: false })
+    expect(piece.words[0]).toEqual({ word: "maxFormless", value: 417.3, retuned: false })
+    expect(piece.words[1]).toEqual({ word: "maxFormless", value: 417.2, retuned: false })
     expect(fields.words[0].confidence).toBe("guessed")
     expect(fields.words[1].confidence).toBe("guessed")
   })

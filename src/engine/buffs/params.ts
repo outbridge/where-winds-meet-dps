@@ -1,9 +1,12 @@
-import type { Inputs } from "../types"
+import type { Inputs, QiBreakWindow } from "../types"
 import type { BuffParams } from "./buffEngine"
+import type { QiPhase } from "../effects/context"
 import { INNER_WAYS, slotInnerWayId } from "../../definitions/innerWays/registry"
 import { tierFromStacks } from "../../definitions/innerWays/innerWayDef"
 import { SET_BY_ID } from "../../definitions/sets/registry"
+import { getBreakthrough } from "../../definitions/baseStats/breakthroughs"
 import { specForClass } from "./data"
+import { DEFAULT_QI_BREAK_WINDOW, resolveQiBreakWindow, sameQiBreakWindow } from "../qiBreak"
 
 // The one place `Inputs.buffParams`' `<param>Tier` wire-key convention is
 // written — every reader goes through `paramOnOf`/`paramTierOf` instead of
@@ -21,11 +24,24 @@ export function paramTierOf(params: BuffParams, param: string): number {
   return typeof tier === "number" ? tier : 0
 }
 
-export function paramsFromInputs(inputs: Inputs): BuffParams {
+export function clockQiPhase(params: BuffParams, timeSec: number): QiPhase {
+  const qiBreakTime = (params.qiBreakTime as number) ?? 25
+  const belowQiTime = (params.belowQiTime as number) ?? qiBreakTime
+  const bossBreakDuration = (params.bossBreakDuration as number) ?? 10
+  const healerExtension = (params.healerBreakExtension as number) ?? 0
+  const breakEnd = qiBreakTime + bossBreakDuration + healerExtension
+  if (timeSec >= qiBreakTime && timeSec < breakEnd) return "exhausted"
+  if (timeSec >= belowQiTime && timeSec < qiBreakTime) return "below30"
+  return "normal"
+}
+
+export function paramsFromInputs(inputs: Inputs, rotationQiBreak?: QiBreakWindow): BuffParams {
+  const qiBreak = resolveQiBreakWindow(inputs.combatSettings, rotationQiBreak)
   const params: BuffParams = {
     isTrainingDummy: !!inputs.dummyMode,
     classId: inputs.classId,
     spec: specForClass(inputs.classId),
+    targetMaxHp: getBreakthrough(inputs.breakthrough).targetHp,
   }
 
   const armorSetKey = inputs.set ? SET_BY_ID[inputs.set]?.siteKey : undefined
@@ -44,24 +60,24 @@ export function paramsFromInputs(inputs: Inputs): BuffParams {
     params[tierKey(def.buffParam)] = tier
   }
 
-  const qiBreak = inputs.combatSettings?.qiBreak
   const breakExtensionBonus = inputs.combatSettings?.breakExtension ? 12 : 0
-  if (
-    qiBreak &&
-    (qiBreak.startSec !== 25 || qiBreak.durationSec !== 10 || breakExtensionBonus !== 0)
-  ) {
+  if (!sameQiBreakWindow(qiBreak, DEFAULT_QI_BREAK_WINDOW) || breakExtensionBonus !== 0) {
     params.qiBreakTime = qiBreak.startSec
     params.bossBreakDuration = qiBreak.durationSec + breakExtensionBonus
   }
-  if (qiBreak && qiBreak.lowQiLeadSec > 0) {
+  if (qiBreak.lowQiLeadSec > 0 && qiBreak.durationSec > 0) {
     params.belowQiTime = Math.max(0, qiBreak.startSec - qiBreak.lowQiLeadSec)
   }
 
+  if (inputs.combatSettings?.script) params[inputs.combatSettings.script] = true
   if (inputs.combatSettings?.dragonHeadFullStacks) params.allySurgingWaves = true
   if (inputs.combatSettings?.dragonHeadLowHpMaxBonus) params.dragonHeadLowHpMaxBonus = true
   if (inputs.combatSettings?.lowEndurance) params.lowEndurance = true
 
   if (inputs.buffParams) Object.assign(params, inputs.buffParams)
+
+  params.minPhysAttack = inputs.phys.min
+  params.breakthrough = inputs.breakthrough
 
   return params
 }

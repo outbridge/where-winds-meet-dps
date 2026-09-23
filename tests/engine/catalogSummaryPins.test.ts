@@ -1,12 +1,12 @@
 // Scoped to Bellstrike Umbra — see CLAUDE.md § "Implemented classes". Pins the
-// Skill Editor text for the eight buffs (of the 18 Umbra-scoped modules) whose
+// Skill Editor text for the twelve buffs (of the 21 Umbra-scoped modules) whose
 // rendering carries an author-written `summary` rather than one the catalog's
 // generic label table can derive from the effect list, so a future edit can't
-// move it silently. The other ten (zenithBar, potentRiverFlow, wineGu,
-// revelryScript, vulnerabilityTeammate, mirage, mirageBonus,
-// rainwhisperShield, resistanceResolve, dragonHeadLowHp) all express their
-// bonus as a plain `allDamageBoost` `StatKey`, which that generic table
-// already renders as "+N% all".
+// move it silently. The other nine (zenithBar, potentRiverFlow, wineGu,
+// vulnerabilityTeammate, mirage, mirageBonus, rainwhisperShield,
+// resistanceResolve, dragonHeadLowHp) all express their bonus as a plain
+// `allDamageBoost` `StatKey`, which that generic table already renders as
+// "+N% all".
 import { describe, expect, it } from "vitest"
 import {
   appliesForSkill,
@@ -19,6 +19,7 @@ import type { Inputs } from "../../src/engine/types"
 import { builtinSkill } from "../builtins"
 import { SKILL } from "../../src/data/skills/bellstrike-umbra/ids"
 import { SKILL as UNIVERSAL_SKILL } from "../../src/data/skills/universal/ids"
+import { SKILL as MYSTIC_SKILL } from "../../src/data/skills/mystic/ids"
 
 const CLASS = "bellstrikeUmbra"
 
@@ -36,14 +37,15 @@ function inputsWithSwordHorizon(tier: string): Inputs {
 }
 
 // Sword Horizon gates bellstrikeUmbraBleedPen/bellstrikeUmbraBleedingDamage/
-// zenithBar; Wolfchaser's Art tier 6 gates soulShaken — the two
-// `requires` every scoped Class Buffs row actually reads. Insightful Strike's
-// and Revelry Script's own params gate other, unscoped modules and stay
-// closed here on purpose.
+// zenithBar; Wolfchaser's Art tier 6 gates soulShaken; breakthrough 18 gates
+// the additional-attack talent's own three rows — the `requires` every
+// scoped Class Buffs row actually reads. Insightful Strike's own param gates
+// other, unscoped modules and stays closed here on purpose.
 function inputsWithSwordHorizonAndWolfchasersArt(): Inputs {
   return {
     ...defaultInputs,
     classId: CLASS,
+    breakthrough: 18,
     mindMethods: [
       { name: "Sword Horizon", stacks: "tier 6" },
       { name: "Wolfchaser's Art", stacks: "tier 6" },
@@ -57,7 +59,7 @@ describe("catalog summary pins — jadeware", () => {
   it("Applies row on Sword Martial Q names the target state the bonus needs", () => {
     const rows = appliesForSkill(builtinSkill(CLASS, SKILL.swordq), CLASS)
     expect(rows.find((row) => row.id === "jadeware")!.effect).toBe(
-      "affinityDmg +10%, directAffinity +7.5% — low-Qi targets only",
+      "affinityDmg +10% for the whole window, directAffinity +7.5% — low-Qi targets only",
     )
   })
 })
@@ -101,15 +103,8 @@ describe("catalog summary pins — soulShaken", () => {
 
 describe("catalog summary pins — surgingWaves", () => {
   it("Applies row on Dragon Head - Plus reads the pre-conversion per-stack text", () => {
-    const rows = appliesForSkill(builtinSkill(CLASS, UNIVERSAL_SKILL.dragonHeadPlus), CLASS)
-    expect(rows.find((row) => row.id === "surgingWaves")!.effect).toBe("+1.3% all/stack")
-  })
-})
-
-describe("catalog summary pins — fluteBoost", () => {
-  it("Applies row on Flute of the Tides Full reads the pre-conversion param-sourced text", () => {
-    const rows = appliesForSkill(builtinSkill(CLASS, UNIVERSAL_SKILL.fluteOfTheTidesFull), CLASS)
-    expect(rows.find((row) => row.id === "fluteBoost")!.effect).toBe("+all (from fluteBoostValue)")
+    const rows = appliesForSkill(builtinSkill(CLASS, MYSTIC_SKILL.dragonHeadPlus), CLASS)
+    expect(rows.find((row) => row.id === "surgingWaves")!.effect).toBe("+1.25% all/stack")
   })
 })
 
@@ -134,12 +129,15 @@ describe("catalog summary pins — bellstrikeUmbraBleedingDamage", () => {
 })
 
 describe("Class Buffs column — class ownership and scope decide membership", () => {
-  it("is exactly the class's own scoped modules, with Sword Horizon and Wolfchaser's Art both at tier 6", () => {
+  it("is exactly the class's own scoped modules, with Sword Horizon and Wolfchaser's Art both at tier 6 and breakthrough 18", () => {
     const rows = alwaysActiveClassBuffs(inputsWithSwordHorizonAndWolfchasersArt())
     expect(rows.map((row) => `${row.id}: ${row.effect}`).sort()).toEqual(
       [
         "bellstrikeUmbraBleedPen: physPen +15, bellstrikePen +15",
         "bellstrikeUmbraBleedingDamage: affinityDmg +18%",
+        "bellstrikeUmbraBleedCoefficient: Bleeding and Blood Burst ×1.00725 to ×1.03 by breakthrough",
+        "strategicSwordAdditionalAttack: physFixed/attributeFixed +7.25% to +30% by breakthrough",
+        "heavenquakerSpearAdditionalAttack: physFixed/attributeFixed +7.25% to +30% by breakthrough",
       ].sort(),
     )
   })

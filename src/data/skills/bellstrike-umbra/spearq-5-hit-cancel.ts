@@ -2,7 +2,8 @@ import { defineSkill, hit } from "../../../definitions/skills/skillDef"
 import { applyBuff } from "../../../definitions/skills/triggers"
 import { ATTUNE, CAST, PROP, WEAPON } from "../ids"
 import { BUFF } from "../buffs/ids"
-import { SKILL, STATUS } from "./ids"
+import { SKILL } from "./ids"
+import { HEAVENQUAKER_SPEAR_RECEIVES } from "./receives"
 
 export const spearq5HitCancel = defineSkill({
   id: SKILL.spearq5HitCancel,
@@ -14,23 +15,49 @@ export const spearq5HitCancel = defineSkill({
   weaponOrAttribute: "Spear",
   attributeAttack: "Bellstrike",
   castTag: CAST.spearQ5HitCancel,
-  triggersBuffs: [BUFF.potentRiverFlow, BUFF.wineGu, BUFF.soulShaken, BUFF.jadeware],
-  castFrames: 85,
+  triggersBuffs: [BUFF.wineGu, BUFF.soulShaken, BUFF.jadeware],
+  receives: [BUFF.wolfchasersArtMartialDamage, ...HEAVENQUAKER_SPEAR_RECEIVES],
+  // A cancel form ends where the animation opens its interrupt window — 101 frames in (in-game animation, 2026-09-09); the parry that ends it is the next rotation step.
+  castFrames: 101,
   triggerable: true,
   hits: [
-    hit(0, { frame: 0, physMultiplier: 0.321, attributeMultiplier: 0.4814, physFixed: 74, attributeFixed: 41 }),
-    hit(1, { frame: 21, physMultiplier: 0.321, attributeMultiplier: 0.4814, physFixed: 74, attributeFixed: 41 }),
-    hit(2, { frame: 42, physMultiplier: 0.321, attributeMultiplier: 0.4814, physFixed: 74, attributeFixed: 41 }),
-    hit(3, { frame: 63, physMultiplier: 0.321, attributeMultiplier: 0.4814, physFixed: 74, attributeFixed: 41 }),
+    hit(0, {
+      frame: 14,
+      physMultiplier: 0.321033,
+      attributeMultiplier: 0.4815495,
+      physFixed: 88.95,
+      attributeFixed: 48.45,
+    }),
+    hit(1, {
+      frame: 31,
+      physMultiplier: 0.321033,
+      attributeMultiplier: 0.4815495,
+      physFixed: 88.95,
+      attributeFixed: 48.45,
+    }),
+    hit(2, {
+      frame: 45,
+      physMultiplier: 0.321033,
+      attributeMultiplier: 0.4815495,
+      physFixed: 88.95,
+      attributeFixed: 48.45,
+    }),
+    hit(3, {
+      frame: 62,
+      physMultiplier: 0.321033,
+      attributeMultiplier: 0.4815495,
+      physFixed: 88.95,
+      attributeFixed: 48.45,
+    }),
     hit(4, {
-      frame: 84,
-      physMultiplier: 0.321,
-      attributeMultiplier: 0.4814,
-      physFixed: 74,
-      attributeFixed: 41,
-      triggers: [applyBuff({ target: STATUS.riverFlow })],
+      frame: 82,
+      physMultiplier: 0.321033,
+      attributeMultiplier: 0.4815495,
+      physFixed: 88.95,
+      attributeFixed: 48.45,
+      triggers: [applyBuff({ target: BUFF.potentRiverFlow, appliesOnCastEnd: true })],
     }),
   ],
   createdAt: "2026-07-19T00:00:00.000Z",
-  updatedAt: "2026-07-19T00:00:00.000Z",
+  updatedAt: "2026-09-09T00:00:00.000Z",
 })

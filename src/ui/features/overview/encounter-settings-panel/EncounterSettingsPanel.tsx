@@ -1,10 +1,17 @@
 import type { ReactNode } from "react"
-import type { Inputs } from "../../../../engine/types"
+import type { Inputs, ScriptId } from "../../../../engine/types"
 import { defaultCombatSettings } from "../../../../engine/types"
 import { NumInput } from "../../../components/number-inputs/NumberInputs"
 import { Switch } from "../../../components/switch/Switch"
 import { useI18n } from "../../../../i18n/i18nContext"
+import { DEFAULT_QI_BREAK_WINDOW } from "../../../../engine/qiBreak"
+import { SCRIPT_IDS } from "../../../../data/skills/buffs/scriptOptions"
 import styles from "./EncounterSettingsPanel.module.scss"
+
+const SCRIPT_LABEL_KEYS: Record<ScriptId, string> = {
+  wraithstrikeScript: "overview.encounterSettings.wraithstrikeScript",
+  voidrotScript: "overview.encounterSettings.voidrotScript",
+}
 
 interface Props {
   inputs: Inputs
@@ -36,19 +43,15 @@ function SwitchRow({
   )
 }
 
-function DivinecraftSegments({
+function SegmentedControl<T>({
   value,
+  options,
   onChange,
 }: {
-  value: Inputs["tianGongElement"]
-  onChange: (next: Inputs["tianGongElement"]) => void
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (next: T) => void
 }) {
-  const { t } = useI18n()
-  const options: { value: Inputs["tianGongElement"]; label: string }[] = [
-    { value: null, label: t("common.none2") },
-    { value: "fire", label: t("overview.encounterSettings.fireOil") },
-    { value: "poison", label: t("overview.encounterSettings.poison") },
-  ]
   return (
     <div className={styles.segmented}>
       {options.map((option) => (
@@ -66,6 +69,37 @@ function DivinecraftSegments({
   )
 }
 
+function DivinecraftSegments({
+  value,
+  onChange,
+}: {
+  value: Inputs["divinecraft"]
+  onChange: (next: Inputs["divinecraft"]) => void
+}) {
+  const { t } = useI18n()
+  const options: { value: Inputs["divinecraft"]; label: string }[] = [
+    { value: null, label: t("common.none2") },
+    { value: "fire", label: t("overview.encounterSettings.fireOil") },
+    { value: "poison", label: t("overview.encounterSettings.poison") },
+  ]
+  return <SegmentedControl value={value} options={options} onChange={onChange} />
+}
+
+function ScriptSegments({
+  value,
+  onChange,
+}: {
+  value: ScriptId | null
+  onChange: (next: ScriptId | null) => void
+}) {
+  const { t } = useI18n()
+  const options: { value: ScriptId | null; label: string }[] = [
+    { value: null, label: t("common.none2") },
+    ...SCRIPT_IDS.map((id) => ({ value: id, label: t(SCRIPT_LABEL_KEYS[id]) })),
+  ]
+  return <SegmentedControl value={value} options={options} onChange={onChange} />
+}
+
 export function EncounterSettingsPanel({ inputs, onChange }: Props) {
   const { t } = useI18n()
   const set = <K extends keyof Inputs>(key: K, value: Inputs[K]) =>
@@ -74,6 +108,7 @@ export function EncounterSettingsPanel({ inputs, onChange }: Props) {
   const settings = inputs.combatSettings ?? defaultCombatSettings()
   const setCombat = <K extends keyof typeof settings>(key: K, value: (typeof settings)[K]) =>
     onChange({ ...inputs, combatSettings: { ...settings, [key]: value } })
+  const override = settings.qiBreakOverride
 
   return (
     <div className={styles.encounterSettings}>
@@ -93,11 +128,6 @@ export function EncounterSettingsPanel({ inputs, onChange }: Props) {
             onChange={(value) => set("food", value)}
           />
           <SwitchRow
-            label={t("overview.encounterSettings.revelryScript")}
-            checked={settings.revelryScript}
-            onChange={(value) => setCombat("revelryScript", value)}
-          />
-          <SwitchRow
             label={t("overview.encounterSettings.maxLowHpBonusDragon")}
             checked={settings.dragonHeadLowHpMaxBonus}
             onChange={(value) => setCombat("dragonHeadLowHpMaxBonus", value)}
@@ -110,10 +140,14 @@ export function EncounterSettingsPanel({ inputs, onChange }: Props) {
         </div>
       </Section>
 
+      <Section title={t("overview.encounterSettings.script")}>
+        <ScriptSegments value={settings.script} onChange={(value) => setCombat("script", value)} />
+      </Section>
+
       <Section title={t("overview.encounterSettings.divinecraft")}>
         <DivinecraftSegments
-          value={inputs.tianGongElement}
-          onChange={(value) => set("tianGongElement", value)}
+          value={inputs.divinecraft}
+          onChange={(value) => set("divinecraft", value)}
         />
       </Section>
 
@@ -157,42 +191,48 @@ export function EncounterSettingsPanel({ inputs, onChange }: Props) {
         </div>
       </Section>
 
-      <Section title={t("overview.encounterSettings.qiBreak")}>
+      <Section title={t("overview.encounterSettings.qiBreakOverride")}>
         <div className={styles.switchGrid}>
           <SwitchRow
-            label={t("common.qiBreakWindow")}
-            checked={settings.qiBreak.enabled}
-            onChange={(value) => setCombat("qiBreak", { ...settings.qiBreak, enabled: value })}
+            label={t("overview.encounterSettings.overrideTheRotation")}
+            checked={override !== null}
+            onChange={(value) =>
+              setCombat("qiBreakOverride", value ? DEFAULT_QI_BREAK_WINDOW : null)
+            }
           />
         </div>
-        {settings.qiBreak.enabled && (
+        {override ? (
           <div className={styles.qiBreakFields}>
             <label className={styles.qiBreakField}>
-              {t("overview.encounterSettings.startS")}
+              {t("common.startS")}
               <NumInput
-                value={settings.qiBreak.startSec}
-                onChange={(value) => setCombat("qiBreak", { ...settings.qiBreak, startSec: value })}
+                value={override.startSec}
+                onChange={(value) => setCombat("qiBreakOverride", { ...override, startSec: value })}
               />
             </label>
             <label className={styles.qiBreakField}>
-              {t("overview.encounterSettings.durationS")}
+              {t("common.durationS")}
               <NumInput
-                value={settings.qiBreak.durationSec}
+                value={override.durationSec}
                 onChange={(value) =>
-                  setCombat("qiBreak", { ...settings.qiBreak, durationSec: value })
+                  setCombat("qiBreakOverride", { ...override, durationSec: value })
                 }
               />
             </label>
             <label className={styles.qiBreakField}>
-              {t("overview.encounterSettings.lowQiLeadS")}
+              {t("common.lowQiLeadS")}
               <NumInput
-                value={settings.qiBreak.lowQiLeadSec}
+                value={override.lowQiLeadSec}
                 onChange={(value) =>
-                  setCombat("qiBreak", { ...settings.qiBreak, lowQiLeadSec: value })
+                  setCombat("qiBreakOverride", { ...override, lowQiLeadSec: value })
                 }
               />
             </label>
           </div>
+        ) : (
+          <p className={styles.qiBreakHint}>
+            {t("overview.encounterSettings.eachRotationRunsItsOwnBreakWindow")}
+          </p>
         )}
       </Section>
     </div>

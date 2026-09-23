@@ -10,7 +10,7 @@ const THIRD_WAVE = 2
 
 // "The multiple sword energy attacks will not cause Abrasion when hitting
 // Exhausted units, and the third one is guaranteed to be an Affinity hit
-// against Exhausted non-player units" (client localization, 2026-08-15).
+// against Exhausted non-player units" (in-game English text, 2026-08-15).
 // Exhausted is the qi-break window, which is what `HitContext.phase` reports.
 //
 // A hoisted function, not a `const`: `swordMorph.ts` imports this module for
@@ -26,7 +26,7 @@ export function swordMorphExhaustedBehavior(build: BuildView): SkillBehavior | n
 
     buildArt(input, context) {
       const art = DEFAULT_BEHAVIOR.buildArt.call(this, input, context)
-      if (context.phase === "exhausted") art.guaranteedPrecision = 1
+      if (context.phase === "exhausted") art.abrasionAvoidRate = 1
       return art
     },
 

@@ -6,11 +6,8 @@ import {
   grantsMinPhysCritBoostFor,
 } from "../../src/definitions/classes/registry"
 import { builtinBuffsForClass } from "../../src/engine/builtinBuffs"
-import { prepareMechanics } from "../../src/engine/mechanics"
-import type { MechanicSetup } from "../../src/engine/mechanics/types"
 import { poisonExtensionForClass } from "../../src/definitions/classes/poisonExtensions"
 import { buildBehaviors, DEFAULT_BEHAVIOR, type BuildView } from "../../src/engine/behavior"
-import { defaultInputs } from "../../src/engine/defaults"
 import { buffDefsForClass } from "../../src/engine/buffs/data"
 import { DEBUFF, SKILL } from "../../src/data/skills/bellstrike-umbra/ids"
 
@@ -21,6 +18,7 @@ describe("class registry — one call answers what a class is made of", () => {
       "stonesplitStrength",
       "bellstrikeSplendor",
       "silkbindJade",
+      "bamboocutDraught",
     ])
     expect(classDefinition("notAClass")).toBeNull()
   })
@@ -96,30 +94,36 @@ describe("bellstrikeUmbra — every declared ClassDef field is wired", () => {
     expect(umbra.classBuffDefs.map((module) => module.id)).toEqual([
       "bellstrikeUmbraBleedPen",
       "bellstrikeUmbraBleedingDamage",
+      "bellstrikeUmbraBleedCoefficient",
+      "strategicSwordAdditionalAttack",
+      "heavenquakerSpearAdditionalAttack",
     ])
   })
 
   it("buffModules composes every slottable inner way's buffDefs (barrel order) ahead of the class's own", () => {
     expect(umbra.buffModules.map((module) => module.id)).toEqual([
       "buff-bellstrikeUmbra-zenith-bar",
-      "potentRiverFlow",
       "wineGu",
       "soulShaken",
+      "wolfchasersArtMartialDamage",
       "disintegration",
       "bellstrikeUmbraBleedPen",
       "bellstrikeUmbraBleedingDamage",
+      "bellstrikeUmbraBleedCoefficient",
+      "strategicSwordAdditionalAttack",
+      "heavenquakerSpearAdditionalAttack",
     ])
   })
 
-  it("buffDefsForClass('bellstrikeUmbra') is the full 25-entry composition: inner-way owned, then the reordered globals, then the class's own", () => {
+  it("buffDefsForClass('bellstrikeUmbra') is the full 36-entry composition: inner-way owned, then the reordered globals, then the class's own", () => {
     expect(buffDefsForClass("bellstrikeUmbra").map((module) => module.id)).toEqual([
       "buff-bellstrikeUmbra-zenith-bar",
-      "potentRiverFlow",
       "wineGu",
       "soulShaken",
+      "wolfchasersArtMartialDamage",
       "disintegration",
-      "revelryScript",
-      "fluteBoost",
+      "wraithstrikeScript",
+      "voidrotScript",
       "vulnerabilityTeammate",
       "jadeware",
       "mirage",
@@ -136,44 +140,37 @@ describe("bellstrikeUmbra — every declared ClassDef field is wired", () => {
       "mistwillowBuff",
       "mistwillowHeavyBuff",
       "mistwillowLightBuff",
+      "cleftpeakStacks",
+      "tiltrimStack",
+      "tiltrimInebriateBonus",
+      "inebriateCritDamage",
+      "cloudvault",
+      "clashToastDamage",
+      "nonPlayerBaseDamage40",
+      "nonPlayerBaseDamage50",
       "bellstrikeUmbraBleedPen",
       "bellstrikeUmbraBleedingDamage",
+      "bellstrikeUmbraBleedCoefficient",
+      "strategicSwordAdditionalAttack",
+      "heavenquakerSpearAdditionalAttack",
     ])
   })
 
   it("gateBuffs are registered under this class id", () => {
     expect(builtinBuffsForClass("bellstrikeUmbra").map((buff) => buff.name)).toEqual([
-      "River Flow",
-      "Spear Special Cooldown",
       "Zenith Bar",
       "Zenith Detonation",
-    ])
-  })
-
-  it("Umbra's own declared gateBuffs holds only its two class gates", () => {
-    expect(umbra.gateBuffs.map((buff) => buff.name)).toEqual([
       "River Flow",
       "Spear Special Cooldown",
     ])
   })
 
-  it("mechanics are registered for this class", () => {
-    expect(umbra.mechanics.map(({ mechanic }) => mechanic.id)).toEqual(["levelAttributeBonus"])
-    const setup: MechanicSetup = {
-      inputs: defaultInputs,
-      classId: "bellstrikeUmbra",
-      fps: 60,
-      rotationDurationSec: 10,
-      hitTimesSec: [0],
-      weaponHitTimesSec: [0],
-      qiPhaseAt: () => "normal",
-      paramOn: () => false,
-      paramTier: () => 0,
-      hasBuffEngine: true,
-      effectiveRates: { precision: 1, critRate: 0.5, affinityRate: 0.2 },
-    }
-    const preparedIds = prepareMechanics(setup).map((prepared) => prepared.mechanic.id)
-    expect(preparedIds).toContain("levelAttributeBonus")
+  it("Umbra declares no gate buffs of its own — every one it shows is an inner way's", () => {
+    expect(umbra.gateBuffs).toEqual([])
+  })
+
+  it("declares no mechanics of its own", () => {
+    expect(umbra.mechanics).toEqual([])
   })
 
   it("the skill behaviour is registered for Blood Burst", () => {
@@ -183,6 +180,7 @@ describe("bellstrikeUmbra — every declared ClassDef field is wired", () => {
       innerWayTier: (name) => (name === "swordHorizon" ? 1 : null),
       classSpecificAttunement: () => 0,
       grantsMinPhysCritBoost: () => false,
+      openingStacks: () => 0,
     }
     expect(buildBehaviors(build)(bleedDetonation)).not.toBe(DEFAULT_BEHAVIOR)
     const noSwordHorizon: BuildView = { ...build, innerWayTier: () => null }

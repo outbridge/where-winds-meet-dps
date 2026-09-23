@@ -8,31 +8,37 @@ import { wolfchasersArt } from "./wolfchasersArt"
 
 // This module and `wolfchasersArt.ts` import each other — it for these
 // factories' `buffDefs` entry, this module for `soulShakenBuffDef`'s tier
-// lookup — and `wolfchasersArt.ts` calls the factories while its own `const`
-// is still in TDZ. So every export below is a hoisted function, never a
-// `const`, and nothing at this module's top level may read `wolfchasersArt`
-// (only a call made once loading has finished, e.g. inside a getter, may).
-export function potentRiverFlowBuffDef() {
-  return defineBuff({
-    id: BUFF.potentRiverFlow,
-    name: "Potent River Flow",
-    requires: { param: PARAM.wolfchasersArt },
-    affectsAll: true,
-    duration: 15,
-    buffAppliesOnCastEnd: true,
-    effects: [stat("allDamageBoost", 0.25)],
-  })
-}
-
+// lookup — and `wolfchasersArt.ts` calls the
+// factories while its own `const` is still in TDZ. So every export that builds
+// a def below is a hoisted function, never a `const`, and nothing at this
+// module's top level may read `wolfchasersArt` (only a call made once loading
+// has finished, e.g. inside a getter, may).
 export function wineGuBuffDef() {
   return defineBuff({
     id: BUFF.wineGu,
     name: "Wine Gu",
     requires: { param: PARAM.wolfchasersArt, minTier: 6 },
     affectsAll: true,
+    // In-game behaviour as of 2026-09-10: this one raises the damage of an
+    // attack, and leaves a damage-over-time tick alone.
+    reachesDotTicks: false,
     duration: 15,
     buffAppliesOnCastEnd: true,
     effects: [stat("allDamageBoost", 0.05)],
+  })
+}
+
+// In-game talent text as of 2026-09-10: from rank 3, Wolfchaser's Art raises
+// Sober Sorrow's damage by 10%.
+export function wolfchasersArtMartialDamageBuffDef() {
+  return defineBuff({
+    id: BUFF.wolfchasersArtMartialDamage,
+    name: "Sober Sorrow Damage",
+    requires: { param: PARAM.wolfchasersArt, minTier: 3 },
+    alwaysActive: true,
+    duration: 9999,
+    summary: "allDamageBoost +10%",
+    effects: (ctx) => (ctx.self.reachesEvent ? [stat("allDamageBoost", 0.1)] : []),
   })
 }
 
@@ -59,7 +65,7 @@ export function soulShakenBuffDef(): BuffModule {
         ))
       },
     },
-    duration: 15,
+    duration: 18,
     maxStacks: 5,
     stacksPerHit: true,
     summary: "+10.0% all/stack",

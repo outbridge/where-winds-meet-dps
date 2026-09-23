@@ -11,9 +11,12 @@ follows from that.
 
 ## Where user data lives
 
-Three stores, each with its own version constant: saved profiles (inputs plus gear
-inventory), user-authored rotations, and a legacy single-build blob that is rolled
-into a default profile on first load.
+Saved profiles (inputs plus gear inventory), Skill Editor copies of skills and of
+debuffs, user-authored rotations and buffs, and a legacy single-build blob that is
+rolled into a default profile on first load. Profiles, skill copies and debuff
+copies each walk their own migration chain (`src/migrations/`,
+`src/migrations/customSkills/`, `src/migrations/customDebuffs/`); the rest carry a
+version constant and heal through their hydrators.
 
 ## What counts as "affects saved profiles"
 
@@ -109,6 +112,13 @@ TESTING.md § "Migration tests" is the required shape.
 class the profile **resolves to**, which is not always the id it stores — an id a
 later step renames still files under its migrated name.
 
+A skill or debuff store is captured whole:
+`tests/migrations/testCustomSkills/v<version>/store.json` and
+`tests/migrations/testCustomDebuffs/v<version>/store.json`, one folder per version
+from the chain's floor to the version before the latest, each holding an untouched
+seeded copy, an edited copy and a user-authored entry so a step proves it rewrites
+only the first. Mechanically enforced by `tests/migrations/testCustomStoreFolders.test.ts`.
+
 Adding a step means adding the folder it reads from: every registered class needs
 a profile at the newest stored version, and a class present at one version must be
 present at every later one. Where no real capture exists, walk the nearest earlier
@@ -117,9 +127,16 @@ profile forward through the chain. Mechanically enforced by
 
 ### Scope
 
-The chain covers saved profiles only. The other stores carry their own version
-counters, heal through their hydrators, reuse the transforms a step exports, and
-still drop on version mismatch.
+Three stores walk a chain — saved profiles, skill copies and debuff copies — and
+every rule above binds each of them: one hop per file under the store's own folder,
+pure and idempotent steps, a captured fixture per step, and a walk that never
+deletes. A skill or debuff store older than its chain's floor is the one exception:
+its shape predates the chain and it is dropped, as it was before. Coefficient
+repairs on a stored copy are steps, never hydrator code; the hydrator keeps only
+what has to run on every load because it depends on the current built-in library
+(tags, reach) or on an import. Rotations and buffs carry a version constant, heal
+through their hydrators, reuse the transforms a step exports, and still drop on
+version mismatch.
 
 ## Every migration must be
 
@@ -130,6 +147,14 @@ still drop on version mismatch.
 - **Tested** — TESTING.md § "Migration tests".
 - **Conservative about deleting** — clear the one field that is now illegal; do not
   discard neighbouring user data to be safe.
+- **Silent about what it cannot resolve** — a stored value this build does not
+  recognise is kept exactly as written, and scores nothing. Repair renames and
+  clamps; it never empties a field to make an unknown value go away. A profile
+  written by a newer build and opened by an older one is the ordinary case, and
+  there every unrecognised value is one the user still owns. The one thing that
+  is still cleared is a value this build **does** define but the current
+  selection forbids: that one would be scored, and a build the selection cannot
+  hold is the invisible wrong number an allowlist exists to stop.
 - **Checked against the default build** — the hydrator runs on the default profile,
   so a too-aggressive migration can silently change the app's default build.
 

@@ -49,6 +49,33 @@
   color: var(--color-text-muted);
 }
 
+.heirloomPick {
+  border-color: var(--color-rarity-legendary);
+  background: var(--color-surface-selected);
+}
+
+.heirloomTag {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--color-rarity-legendary);
+  border-radius: 999px;
+  color: var(--color-rarity-legendary);
+  font-size: 0.68em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cell .heirloomTag {
+  margin-left: 0;
+}
+
+.heirloomNote {
+  font-size: 0.82em;
+  color: var(--color-text-muted);
+}
+
 .warn {
   margin-top: 4px;
   padding: 4px 6px;
@@ -66,22 +93,22 @@
 
 .retuneTable {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content;
   column-gap: 20px;
   font-size: 0.82em;
 }
 
-.reattunementTable {
+.reattunementWeightedTable {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content;
   column-gap: 20px;
   font-size: 0.82em;
 }
 
 .retuneTable > .th:not(:first-child),
 .retuneTable > * > .cell:not(:first-child),
-.reattunementTable > .th:not(:first-child),
-.reattunementTable > * > .cell:not(:first-child) {
+.reattunementWeightedTable > .th:not(:first-child),
+.reattunementWeightedTable > * > .cell:not(:first-child) {
   justify-content: flex-end;
   text-align: right;
 }

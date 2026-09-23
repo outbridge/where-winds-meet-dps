@@ -1,11 +1,18 @@
 import type { StatKey } from "../statRegistry"
 
-// The two fields `hitToArtRow` never sets, so an `artBonus` effect is always
-// additive onto an absent (zero-ish) starting value — never a replace.
-// `extraCritDamage` is deliberately excluded: `hitToArtRow` DOES set it, and
-// `buildArt` may overwrite it again resolving the crit-boost sentinel — a
-// replace, not an addition (see `behavior.ts`). It has no `artBonus` producer.
-export type ArtBonusField = "extraCritRate" | "extraPhysPenetration"
+// The fields below are the ones `hitToArtRow` never sets, so an `artBonus`
+// effect is always additive onto an absent (zero-ish) starting value — never
+// a replace. `extraCritDamage` is deliberately excluded: `hitToArtRow` DOES
+// set it, and `buildArt` may overwrite it again resolving the crit-boost
+// sentinel — a replace, not an addition (see `behavior.ts`). It has no
+// `artBonus` producer.
+export type ArtBonusField =
+  | "extraCritRate"
+  | "extraPhysPenetration"
+  | "minPhysPctBonus"
+  | "maxPhysPctBonus"
+  | "attributeAttackPctBonus"
+  | "fixedDamagePctBonus"
 
 export type Effect =
   | { kind: "stat"; statKey: StatKey; amount: number }
@@ -15,6 +22,7 @@ export type Effect =
   | { kind: "artBonus"; field: ArtBonusField; amount: number }
   | { kind: "damageMultiplier"; factor: number }
   | { kind: "setStatus"; id: string; stacks?: number; permanent?: boolean; durationFrames?: number }
+  | { kind: "echo"; debuffId: string }
 
 // The subset `SkillBehavior.claimStatEffects`/`onHit` may return — before the
 // formula context is built. `forceOutcome` narrows to "affinity": nothing
@@ -70,4 +78,8 @@ export function setStatus(
   opts: { stacks?: number; permanent?: boolean; durationFrames?: number } = {},
 ): Extract<Effect, { kind: "setStatus" }> {
   return { kind: "setStatus", id, ...opts }
+}
+
+export function echo(debuffId: string): Extract<Effect, { kind: "echo" }> {
+  return { kind: "echo", debuffId }
 }

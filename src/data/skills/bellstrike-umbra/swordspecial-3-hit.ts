@@ -1,7 +1,8 @@
-import { defineSkill, hit } from "../../../definitions/skills/skillDef"
-import { applyDot, detonateDot } from "../../../definitions/skills/triggers"
+import { defineSkill } from "../../../definitions/skills/skillDef"
 import { ATTUNE, CAST, WEAPON } from "../ids"
-import { SKILL, DEBUFF } from "./ids"
+import { SKILL } from "./ids"
+import { SWORDSPECIAL_HITS } from "./swordspecial-hits"
+import { STRATEGIC_SWORD_RECEIVES } from "./receives"
 
 export const swordspecial3Hit = defineSkill({
   id: SKILL.swordspecial3Hit,
@@ -13,34 +14,11 @@ export const swordspecial3Hit = defineSkill({
   weaponOrAttribute: "Sword",
   attributeAttack: "Bellstrike",
   castTag: CAST.swordSpecial3Hit,
-  castFrames: 60,
+  receives: STRATEGIC_SWORD_RECEIVES,
+  // A player-ended form: castFrames sits 11 frames past the frame at which the animation would accept the next input (in-game animation, 2026-09-09).
+  castFrames: 57,
   triggerable: true,
-  hits: [
-    hit(0, {
-      frame: 0,
-      physMultiplier: 0.21806666666666666,
-      attributeMultiplier: 0.3271,
-      physFixed: 50.333333333333336,
-      attributeFixed: 28.333333333333332,
-      triggers: [applyDot({ target: DEBUFF.bleedTick }), detonateDot({ target: DEBUFF.bleedTick, stacks: 0 })],
-    }),
-    hit(1, {
-      frame: 20,
-      physMultiplier: 0.21806666666666666,
-      attributeMultiplier: 0.3271,
-      physFixed: 50.333333333333336,
-      attributeFixed: 28.333333333333332,
-      triggers: [applyDot({ target: DEBUFF.bleedTick }), detonateDot({ target: DEBUFF.bleedTick, stacks: 0 })],
-    }),
-    hit(2, {
-      frame: 40,
-      physMultiplier: 0.21806666666666666,
-      attributeMultiplier: 0.3271,
-      physFixed: 50.333333333333336,
-      attributeFixed: 28.333333333333332,
-      triggers: [applyDot({ target: DEBUFF.bleedTick }), detonateDot({ target: DEBUFF.bleedTick, stacks: 0 })],
-    }),
-  ],
+  hits: SWORDSPECIAL_HITS.slice(0, 3),
   createdAt: "2026-07-19T00:00:00.000Z",
-  updatedAt: "2026-07-19T00:00:00.000Z",
+  updatedAt: "2026-09-09T00:00:00.000Z",
 })

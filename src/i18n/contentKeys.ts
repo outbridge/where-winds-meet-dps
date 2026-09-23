@@ -27,6 +27,10 @@ export function buffKey(buffId: string): string {
   return `content.buff.${buffId}`
 }
 
+export function buffDescriptionKey(buffId: string): string {
+  return `content.buff.${buffId}.description`
+}
+
 export function debuffKey(debuffId: string): string {
   return `content.debuff.${debuffId}`
 }
@@ -35,8 +39,16 @@ export function debuffBreakdownKey(debuffId: string): string {
   return `content.debuff.${debuffId}.breakdown`
 }
 
+export function debuffEchoKey(debuffId: string): string {
+  return `content.debuff.${debuffId}.echo`
+}
+
 export function rotationKey(rotationId: string): string {
   return `content.rotation.${rotationId}`
+}
+
+export function graduationBuildKey(graduationBuildId: string): string {
+  return `content.graduationBuild.${graduationBuildId}`
 }
 
 export function innerWayKey(innerWayId: string): string {
@@ -77,6 +89,18 @@ export function oddityRegionKey(region: string): string {
   return `content.oddityRegion.${camelCaseSegment(region)}`
 }
 
+export function oddityChapterKey(chapter: string): string {
+  return `content.oddityChapter.${camelCaseSegment(chapter)}`
+}
+
+export function oddityNodeKey(node: { id: number }): string {
+  return `content.oddityNode.${node.id}`
+}
+
+export function oddityNodeDescriptionKey(node: { id: number }): string {
+  return `content.oddityNode.${node.id}.description`
+}
+
 export function skillTypeKey(skillType: string): string {
   return `content.skillType.${skillType}`
 }
@@ -87,6 +111,14 @@ export function attributeAttackKey(attributeAttack: string): string {
 
 export function rarityKey(rarity: string): string {
   return `content.rarity.${rarity}`
+}
+
+export function talentNodeKey(node: { id: number }): string {
+  return `content.talentNode.${node.id}`
+}
+
+export function talentNodeDescriptionKey(node: { id: number }): string {
+  return `content.talentNode.${node.id}.description`
 }
 
 const DEFAULT_TALENT_ID = /^default-(.+)-(\d+)$/

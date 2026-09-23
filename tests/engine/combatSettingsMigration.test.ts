@@ -1,9 +1,11 @@
 // Additive field, no version bump — see CLAUDE.md → "localStorage migrations".
-// Also covers folding legacy `fireOil`/`vulnerability` into `tianGongElement`/
-// `shareEasyHurt` and dropping the inert `formbendSet`.
+// Also covers folding legacy `fireOil`/`vulnerability` into `divinecraft`/
+// `shareEasyHurt`, dropping the inert `formbendSet`, and keeping the removed
+// `revelryScript` field rather than stripping it.
 import { beforeEach, describe, expect, it } from "vitest"
 import { kvStore } from "../../src/kvStore"
 import { loadProfiles, saveProfiles } from "../../src/storage"
+import { runEngine } from "../../src/engine/dps"
 import { defaultInputs } from "../../src/engine/defaults"
 import { defaultCombatSettings } from "../../src/engine/types"
 import type { Inputs } from "../../src/engine/types"
@@ -40,25 +42,20 @@ describe("combatSettings migration (additive field, no version bump)", () => {
     expect(profiles[0].inputs.combatSettings).toEqual(defaultCombatSettings())
   })
 
-  it("has the Qi Break window ON by default", () => {
-    expect(defaultCombatSettings().qiBreak).toEqual({
-      enabled: true,
-      startSec: 25,
-      durationSec: 10,
-      lowQiLeadSec: 5,
-    })
+  it("leaves the Qi Break override OFF by default, so the rotation's own window runs", () => {
+    expect(defaultCombatSettings().qiBreakOverride).toBeNull()
     writeProfilesBlob({})
     const { profiles } = loadProfiles()
-    expect(profiles[0].inputs.combatSettings!.qiBreak.enabled).toBe(true)
+    expect(profiles[0].inputs.combatSettings!.qiBreakOverride).toBeNull()
   })
 
   it("preserves a custom `combatSettings` object already on the blob (idempotent)", () => {
     const custom = {
-      qiBreak: { enabled: false, startSec: 30, durationSec: 12, lowQiLeadSec: 3 },
+      qiBreakOverride: { startSec: 30, durationSec: 12, lowQiLeadSec: 3 },
       dragonsBreath: false,
       healerBuff: true,
       breakExtension: false,
-      revelryScript: false,
+      script: "wraithstrikeScript" as const,
       dragonHeadFullStacks: false,
       dragonHeadLowHpMaxBonus: false,
       lowEndurance: false,
@@ -83,18 +80,55 @@ describe("combatSettings migration (additive field, no version bump)", () => {
     })
   })
 
-  it("backfills the low-Qi lead onto a `qiBreak` saved before it existed", () => {
+  it("backfills the low-Qi lead onto a legacy `qiBreak` saved before it existed", () => {
     writeProfilesBlob({
       combatSettings: {
-        ...defaultCombatSettings(),
         qiBreak: { enabled: true, startSec: 30, durationSec: 12 },
       } as unknown as Inputs["combatSettings"],
     })
     const { profiles } = loadProfiles()
-    expect(profiles[0].inputs.combatSettings!.qiBreak).toEqual({
-      enabled: true,
+    expect(profiles[0].inputs.combatSettings!.qiBreakOverride).toEqual({
       startSec: 30,
       durationSec: 12,
+      lowQiLeadSec: 5,
+    })
+  })
+
+  it("carries a hand-tuned legacy `qiBreak` over as an active override", () => {
+    writeProfilesBlob({
+      combatSettings: {
+        qiBreak: { enabled: true, startSec: 30, durationSec: 12, lowQiLeadSec: 3 },
+      } as unknown as Inputs["combatSettings"],
+    })
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.combatSettings!.qiBreakOverride).toEqual({
+      startSec: 30,
+      durationSec: 12,
+      lowQiLeadSec: 3,
+    })
+    expect("qiBreak" in profiles[0].inputs.combatSettings!).toBe(false)
+  })
+
+  it("leaves an untouched legacy `qiBreak` as no override at all", () => {
+    writeProfilesBlob({
+      combatSettings: {
+        qiBreak: { enabled: true, startSec: 25, durationSec: 10, lowQiLeadSec: 5 },
+      } as unknown as Inputs["combatSettings"],
+    })
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.combatSettings!.qiBreakOverride).toBeNull()
+  })
+
+  it("turns a legacy `enabled: false` into an active zero-length override", () => {
+    writeProfilesBlob({
+      combatSettings: {
+        qiBreak: { enabled: false, startSec: 25, durationSec: 10, lowQiLeadSec: 5 },
+      } as unknown as Inputs["combatSettings"],
+    })
+    const { profiles } = loadProfiles()
+    expect(profiles[0].inputs.combatSettings!.qiBreakOverride).toEqual({
+      startSec: 25,
+      durationSec: 0,
       lowQiLeadSec: 5,
     })
   })
@@ -107,22 +141,22 @@ describe("combatSettings migration (additive field, no version bump)", () => {
 
   it("folds a legacy `fireOil: true` into Divinecraft fire and drops the sub-field", () => {
     writeProfilesBlob({
-      tianGongElement: null,
+      divinecraft: null,
       combatSettings: { fireOil: true } as unknown as Inputs["combatSettings"],
     })
     const { profiles } = loadProfiles()
-    expect(profiles[0].inputs.tianGongElement).toBe("fire")
+    expect(profiles[0].inputs.divinecraft).toBe("fire")
     expect(profiles[0].inputs.combatSettings).toEqual(defaultCombatSettings())
     expect("fireOil" in profiles[0].inputs.combatSettings!).toBe(false)
   })
 
   it("leaves an explicit Divinecraft choice alone when folding legacy `fireOil`", () => {
     writeProfilesBlob({
-      tianGongElement: "poison",
+      divinecraft: "poison",
       combatSettings: { fireOil: true } as unknown as Inputs["combatSettings"],
     })
     const { profiles } = loadProfiles()
-    expect(profiles[0].inputs.tianGongElement).toBe("poison")
+    expect(profiles[0].inputs.divinecraft).toBe("poison")
   })
 
   it("folds a legacy `vulnerability: true` into the Tank Spear Debuff flag", () => {
@@ -143,5 +177,29 @@ describe("combatSettings migration (additive field, no version bump)", () => {
     const { profiles } = loadProfiles()
     expect("formbendSet" in profiles[0].inputs.combatSettings!).toBe(false)
     expect("shareDebuff5JingShen" in profiles[0].inputs).toBe(false)
+  })
+
+  it("keeps a stored `revelryScript` field rather than stripping it", () => {
+    writeProfilesBlob({
+      combatSettings: { revelryScript: true } as unknown as Inputs["combatSettings"],
+    })
+    const { profiles } = loadProfiles()
+    expect(
+      (profiles[0].inputs.combatSettings as unknown as { revelryScript: boolean }).revelryScript,
+    ).toBe(true)
+  })
+
+  it("scores identically whether or not a legacy `revelryScript` field is present", () => {
+    writeProfilesBlob({
+      combatSettings: { revelryScript: true } as unknown as Inputs["combatSettings"],
+    })
+    const withField = loadProfiles().profiles[0].inputs
+
+    kvStore.remove(PROFILES_KEY)
+    writeProfilesBlob({})
+    const withoutField = loadProfiles().profiles[0].inputs
+
+    expect(runEngine(withField).totalDamage).toBeCloseTo(runEngine(withoutField).totalDamage, 9)
+    expect(runEngine(withField).warnings).toEqual(runEngine(withoutField).warnings)
   })
 })

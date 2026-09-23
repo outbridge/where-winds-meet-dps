@@ -66,6 +66,50 @@ describe("Bellstrike Umbra bleed buff-defs — BuffEngine unit", () => {
   })
 })
 
+describe("Bellstrike Umbra bleed power coefficient — a multiplier, never a damage-boost term", () => {
+  const factorFor = (params: Record<string, unknown>, receives: string[]) =>
+    new BuffEngine(params, [], umbraOwnBuffDefs()).calculateDamageEffects(skill(receives), 0)
+      .damageFactor
+
+  it("contributes nothing below breakthrough 18", () => {
+    expect(factorFor({ breakthrough: 17 }, ["bellstrikeUmbraBleedCoefficient"])).toBe(1)
+  })
+
+  it("scales a bleed row that receives it ×1.00725 at breakthrough 18", () => {
+    expect(factorFor({ breakthrough: 18 }, ["bellstrikeUmbraBleedCoefficient"])).toBeCloseTo(
+      1.00725,
+      10,
+    )
+  })
+
+  it("scales a bleed row that receives it ×1.03 at breakthrough 21", () => {
+    expect(factorFor({ breakthrough: 21 }, ["bellstrikeUmbraBleedCoefficient"])).toBeCloseTo(
+      1.03,
+      10,
+    )
+  })
+
+  it("leaves a row that does not receive it alone", () => {
+    expect(factorFor({ breakthrough: 21 }, ["bellstrikeUmbraBleedingDamage"])).toBe(1)
+  })
+
+  it("contributes no stat effect, so it can never join the additive boost sum", () => {
+    expect(sumsFor({ breakthrough: 21 }, ["bellstrikeUmbraBleedCoefficient"])).toEqual({
+      affinityDamageBoost: 0,
+      "phys.penetration": 0,
+      "bellstrike.penetration": 0,
+    })
+  })
+
+  it("reaches exactly the two bleed rows among the class's built-in skills", () => {
+    const carriers = builtinSkillsForClass("bellstrikeUmbra")
+      .filter((candidate) => (candidate.receives ?? []).includes("bellstrikeUmbraBleedCoefficient"))
+      .map((candidate) => candidate.id)
+      .sort()
+    expect(carriers).toEqual([SKILL.bleedDetonation, SKILL.bleedTick].sort())
+  })
+})
+
 describe("Bellstrike Umbra bleed buff-defs — Skill Editor RECEIVES visibility", () => {
   it("surfaces both buff ids for the Blood Burst skill and neither for Sword Martial Q", () => {
     const detonation = builtinSkillsForClass("bellstrikeUmbra").find(

@@ -1,4 +1,5 @@
 import { catalogBuffDefs } from "./data"
+import { builtinBuffsForClass } from "../builtinBuffs"
 import { attuneTagOf, mysticCategoryOf, skillTagsOf } from "./tags"
 import { reaches } from "../scope"
 import { displayGateFor } from "./displayGates"
@@ -78,10 +79,15 @@ function humanize(param: string): string {
 export function requiresLabel(module: BuffModule): string | null {
   const requires = module.requires
   if (requires?.set) return setDisplayNameForSiteKey(requires.set) ?? requires.set
-  if (!requires?.param) return null
+  const breakthroughLabel = requires?.minBreakthrough
+    ? `breakthrough ${requires.minBreakthrough}+`
+    : null
+  if (!requires?.param) return breakthroughLabel
   const innerWayName = innerWayForBuffParam(requires.param)?.name
-  if (innerWayName) return innerWayName + (requires.minTier ? ` tier ${requires.minTier}+` : "")
-  return humanize(requires.param) + (requires.minTier ? ` T${requires.minTier}+` : "")
+  const paramLabel = innerWayName
+    ? innerWayName + (requires.minTier ? ` tier ${requires.minTier}+` : "")
+    : humanize(requires.param) + (requires.minTier ? ` T${requires.minTier}+` : "")
+  return breakthroughLabel ? `${paramLabel}, ${breakthroughLabel}` : paramLabel
 }
 
 // Both scoped to the class's OWN `classBuffDefs` — never `buffDefsForClass`'s
@@ -100,18 +106,36 @@ export function specMechanicIds(classId?: string): Set<string> {
 }
 
 // The rotation editor's per-cast chip suppression: narrower than the column
-// above, the `alwaysActive` subset only.
+// above, the `alwaysActive` subset only, plus the always-active normal buffs
+// `requires.classId` scopes to this class — always on for it, never a chip —
+// and the gates a build opens the whole fight with as a bare unlock marker.
 export function hiddenTimelineBuffIds(classId?: string): Set<string> {
-  return new Set(
-    ownBuffDefsFor(classId)
+  const classScoped = classId
+    ? catalogBuffDefs(classId).filter((module) => module.requires?.classId === classId)
+    : []
+  const unlockMarkers = classId
+    ? builtinBuffsForClass(classId).filter(
+        (gate) =>
+          gate.effects.length === 0 && gate.maxStacks === 1 && gate.defaultOpeningStacks === 1,
+      )
+    : []
+  return new Set([
+    ...[...ownBuffDefsFor(classId), ...classScoped]
       .filter((module) => module.alwaysActive)
       .map((module) => module.id),
-  )
+    ...unlockMarkers.map((gate) => gate.id),
+  ])
 }
 
 export function buffGateSatisfied(module: BuffModule, params: BuffParams): boolean {
   const requires = module.requires
+  if (requires?.classId && requires.classId !== params.classId) return false
   if (requires?.set && requires.set !== params.armorSet) return false
+  if (
+    requires?.minBreakthrough &&
+    (typeof params.breakthrough !== "number" || params.breakthrough < requires.minBreakthrough)
+  )
+    return false
   if (requires?.param && !paramOnOf(params, requires.param)) return false
   if (requires?.minTier && requires.param && paramTierOf(params, requires.param) < requires.minTier)
     return false
@@ -302,12 +326,8 @@ export interface ClassBuffRow {
   requires: string | null
 }
 
-// The column lists defs that scope themselves to specific skills; an unscoped
-// def applies to the whole build and is shown on the skills it triggers from
-// instead (an Applies row — see `appliesForSkill`).
-function hasScope(module: BuffModule, skills: readonly Skill[]): boolean {
-  if (module.affectsAll) return false
-  return skills.some((skill) => skill.receives?.includes(module.id))
+function isVisibleOnTalentsTab(module: BuffModule, skills: readonly Skill[]): boolean {
+  return module.affectsAll || skills.some((skill) => skill.receives?.includes(module.id))
 }
 
 // `classBuffDefs`, not the composed `buffModules`: a buff an inner way owns is
@@ -322,7 +342,13 @@ export function alwaysActiveClassBuffs(inputs: Inputs): ClassBuffRow[] {
   const skills = skillsInScope(inputs.classId, inputs)
   const rows: ClassBuffRow[] = []
   for (const module of byId.values()) {
-    if (!hasScope(module, skills)) continue
+    if (!isVisibleOnTalentsTab(module, skills)) continue
+    if (
+      module.requires?.minBreakthrough &&
+      (typeof params.breakthrough !== "number" ||
+        params.breakthrough < module.requires.minBreakthrough)
+    )
+      continue
     if (module.requires?.param && !paramOnOf(params, module.requires.param)) continue
     if (
       module.requires?.minTier &&

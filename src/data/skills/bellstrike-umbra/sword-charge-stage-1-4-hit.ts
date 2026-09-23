@@ -1,7 +1,8 @@
-import { defineSkill, hit } from "../../../definitions/skills/skillDef"
-import { applyDot } from "../../../definitions/skills/triggers"
+import { defineSkill } from "../../../definitions/skills/skillDef"
 import { ATTUNE, CAST, WEAPON } from "../ids"
-import { SKILL, DEBUFF } from "./ids"
+import { SKILL } from "./ids"
+import { SWORD_CHARGE_STAGE_1_HITS } from "./sword-charge-stage-1-hits"
+import { STRATEGIC_SWORD_RECEIVES } from "./receives"
 
 export const swordChargeStage14Hit = defineSkill({
   id: SKILL.swordChargeStage14Hit,
@@ -13,42 +14,11 @@ export const swordChargeStage14Hit = defineSkill({
   weaponOrAttribute: "Sword",
   attributeAttack: "Bellstrike",
   castTag: CAST.swordChargeStage14Hit,
-  castFrames: 88,
+  receives: STRATEGIC_SWORD_RECEIVES,
+  // A player-ended form: castFrames is capped where the follow-up window closes — an 11-frame margin would land past it and give the five-hit ending instead (in-game animation, 2026-09-09).
+  castFrames: 56,
   triggerable: true,
-  hits: [
-    hit(0, {
-      frame: 0,
-      physMultiplier: 0.3021910714285725,
-      attributeMultiplier: 0.4532946428571425,
-      physFixed: 83.5714285714285,
-      attributeFixed: 45.48214285714275,
-      triggers: [applyDot({ target: DEBUFF.bleedTick })],
-    }),
-    hit(1, {
-      frame: 22,
-      physMultiplier: 0.3021910714285725,
-      attributeMultiplier: 0.4532946428571425,
-      physFixed: 83.5714285714285,
-      attributeFixed: 45.48214285714275,
-      triggers: [applyDot({ target: DEBUFF.bleedTick })],
-    }),
-    hit(2, {
-      frame: 44,
-      physMultiplier: 0.3021910714285725,
-      attributeMultiplier: 0.4532946428571425,
-      physFixed: 83.5714285714285,
-      attributeFixed: 45.48214285714275,
-      triggers: [applyDot({ target: DEBUFF.bleedTick })],
-    }),
-    hit(3, {
-      frame: 66,
-      physMultiplier: 0.3021910714285725,
-      attributeMultiplier: 0.4532946428571425,
-      physFixed: 83.5714285714285,
-      attributeFixed: 45.48214285714275,
-      triggers: [applyDot({ target: DEBUFF.bleedTick })],
-    }),
-  ],
+  hits: SWORD_CHARGE_STAGE_1_HITS.slice(0, 4),
   createdAt: "2026-07-19T00:00:00.000Z",
-  updatedAt: "2026-07-19T00:00:00.000Z",
+  updatedAt: "2026-09-09T00:00:00.000Z",
 })

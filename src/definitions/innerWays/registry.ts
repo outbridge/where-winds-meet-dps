@@ -1,6 +1,7 @@
 import type { Inputs } from "../../engine/types"
-import { tierFromStacks, type InnerWayDef } from "./innerWayDef"
-import { INNER_WAYS } from "../../data/innerWays"
+import { tierFromStacks, type InnerWayDef, type PanelStats } from "./innerWayDef"
+import type { InnerWayLadderId } from "../../data/innerWays/ids"
+import { INNER_WAYS, INNER_WAY_LADDERS } from "../../data/innerWays"
 import { registerMechanic } from "../../engine/mechanics"
 import { registerDisplayGate } from "../../engine/buffs/displayGates"
 import { registerSkillBehavior } from "../../engine/behavior"
@@ -19,6 +20,20 @@ setInnerWayDefs(INNER_WAYS)
 
 export function innerWayDefinition(id: string): InnerWayDef | undefined {
   return INNER_WAYS.find((def) => def.id === id)
+}
+
+export function innerWayLadderStats(ladder: InnerWayLadderId, breakthrough: number): PanelStats {
+  const rows = INNER_WAY_LADDERS[ladder]
+  let nearest: number | undefined
+  for (const key of Object.keys(rows)) {
+    const candidate = Number(key)
+    if (
+      nearest === undefined ||
+      Math.abs(candidate - breakthrough) < Math.abs(nearest - breakthrough)
+    )
+      nearest = candidate
+  }
+  return nearest === undefined ? {} : rows[nearest]
 }
 
 // Ids are stable identifiers, NOT translation keys: the UI renders
@@ -73,7 +88,7 @@ export function activeInnerWayDefs(slots: readonly SlottedInnerWay[]): InnerWayD
 
 export function innerWayScalar(
   slots: readonly SlottedInnerWay[],
-  channel: "generalDamageBoost" | "chargeBonus" | "dotDamageBoost" | "allDamageBonus",
+  channel: "generalDamageBoost" | "chargeBonus",
 ): number {
   let total = 0
   for (const def of activeInnerWayDefs(slots)) total += def.scalars?.[channel] ?? 0
@@ -94,6 +109,16 @@ export function henZhiActiveForInputs(inputs: Inputs): boolean {
 
 export function hasInnerWay(slots: readonly SlottedInnerWay[], innerWayId: string): boolean {
   return slots.some((slot) => slotInnerWayId(slot) === innerWayId)
+}
+
+export function openingStackBuffIds(slots: readonly SlottedInnerWay[]): string[] {
+  const out: string[] = []
+  for (const def of INNER_WAYS) {
+    if (!def.openingStackBuffIds?.length) continue
+    if (!slots.some((slot) => slotInnerWayId(slot) === def.id)) continue
+    for (const buffId of def.openingStackBuffIds) if (!out.includes(buffId)) out.push(buffId)
+  }
+  return out
 }
 
 export function innerWayTier(slots: readonly SlottedInnerWay[], innerWayId: string): number | null {

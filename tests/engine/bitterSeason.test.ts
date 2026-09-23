@@ -194,6 +194,7 @@ describe("Bitter Season panel-stat tier gating (getMindMethodContributions)", ()
     getMindMethodContributions({
       ...defaultInputs,
       classId: "bellstrikeUmbra",
+      breakthrough: 17,
       mindMethods: [
         { name: "bitterSeason", stacks },
         emptyMindMethod,
@@ -210,14 +211,14 @@ describe("Bitter Season panel-stat tier gating (getMindMethodContributions)", ()
 
   it("grants precision from tier 2, but not physBoost yet", () => {
     const atTier2 = contributionsAt("tier 2")
-    expect(atTier2.precision).toBeCloseTo(0.069, 10)
+    expect(atTier2.precision).toBeCloseTo(0.072, 10)
     expect(atTier2.physBoost ?? 0).toBe(0)
   })
 
   it("grants both precision and physBoost from tier 5 onward", () => {
     for (const stacks of ["tier 5", "tier 6"]) {
       const contributions = contributionsAt(stacks)
-      expect(contributions.precision).toBeCloseTo(0.069, 10)
+      expect(contributions.precision).toBeCloseTo(0.072, 10)
       expect(contributions.physBoost).toBeCloseTo(0.025, 10)
     }
   })
@@ -316,10 +317,7 @@ describe("Bitter Season — Bellstrike Umbra engine integration", () => {
       customSkills: [soleHit, pad],
       activeCustomRotation: makeRotation("bellstrikeUmbra", {
         name: "single-low-probability-hit",
-        steps: [
-          makeStep({ skillId: soleHit.id, hitCount: 1 }),
-          makeStep({ skillId: pad.id, hitCount: 1 }),
-        ],
+        steps: [makeStep({ skillId: soleHit.id }), makeStep({ skillId: pad.id })],
       }),
     }
     const result = simulateTimeline(inputs)

@@ -2,12 +2,8 @@ import { defineSkill, hit } from "../../../definitions/skills/skillDef"
 import { ATTUNE, CAST, PROP, WEAPON } from "../ids"
 import { BUFF } from "../buffs/ids"
 import { SKILL } from "./ids"
+import { INKWELL_FAN_RECEIVES } from "./receives"
 
-// The reference JSON zeroes every coefficient on this cast — unlike UmbQ
-// Prepull, which carries UmbQ's real numbers. Left at zero rather than
-// overwritten from the workbook's "Fan Q" row: this step's only combat effect
-// is the pre-pull `triggersBuffs`, and `prePullHitsCount: false` on every
-// rotation that casts it excludes pre-pull damage from the total regardless.
 export const fanqPrepull = defineSkill({
   id: SKILL.fanqPrepull,
   classId: "silkbindJade",
@@ -17,6 +13,7 @@ export const fanqPrepull = defineSkill({
   weaponOrAttribute: "Fan",
   attributeAttack: "Silkbind",
   castTag: CAST.fanQPrepull,
+  receives: INKWELL_FAN_RECEIVES,
   triggersBuffs: [BUFF.jadeware, BUFF.windWall, BUFF.windWallPursuit, BUFF.springThunder],
   castFrames: 0,
   triggerable: true,

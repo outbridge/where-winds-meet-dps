@@ -1,5 +1,5 @@
 import { defineInnerWay, type InnerWayDef } from "../../definitions/innerWays/innerWayDef"
-import { INNER_WAY_ID, INNER_WAY_NODE } from "./ids"
+import { INNER_WAY_ID, INNER_WAY_LADDER, INNER_WAY_NODE } from "./ids"
 import { PARAM } from "../skills/buffs/ids"
 import { disintegrationBuffDef } from "./breakingPointBuffs"
 
@@ -10,9 +10,10 @@ export const breakingPoint: InnerWayDef = defineInnerWay({
   id: INNER_WAY_ID.breakingPoint,
   name: "Breaking Point",
   selectableTiers: [6, 5],
+  confirmedBreakthrough: 17,
   buffParam: PARAM.breakingPoint,
   tiers: {
-    2: { panelStats: { precision: 0.069 } },
+    2: { ladder: INNER_WAY_LADDER.precisionFourStar },
     5: { panelStats: { directCritRate: 0.041 } },
     6: { nodes: [INNER_WAY_NODE.breakingPointPerfectDodgeStacks] },
   },

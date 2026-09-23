@@ -1,9 +1,19 @@
-import type { Inputs, OddityNode, OddityRegions, StoredProfile } from "./engine/types"
-import { EMPTY_EQUIPPED, defaultCombatSettings } from "./engine/types"
+import type {
+  ArsenalScores,
+  EnhancementLevels,
+  GearPiece,
+  Inputs,
+  ScriptId,
+  StoredProfile,
+  UnclaimedOddityNodes,
+} from "./engine/types"
+import { EMPTY_EQUIPPED, GEAR_SLOTS, defaultCombatSettings } from "./engine/types"
 import { isGearWordId } from "./data/stats/statLines"
 import { defaultInputs } from "./engine/defaults"
+import { repairGraduationBuildId } from "./engine/graduation"
 import { allowedInnerWaysForClass, defaultArsenalForClass } from "./engine/panel"
-import { CLASS_IDS } from "./definitions/classes/registry"
+import { CLASS_IDS, classDefinition } from "./definitions/classes/registry"
+import { resolveResourceSettings } from "./definitions/resources/resourceDef"
 import { SET_BY_ID } from "./definitions/sets/registry"
 import {
   innerWayIdForName,
@@ -11,9 +21,23 @@ import {
   resolveInnerWayId,
 } from "./definitions/innerWays/registry"
 import { withoutDerivedStats, withZeroedDerivedStats } from "./engine/derivedInputs"
-import { getDefaultTalentsForClass, DEFAULT_ODDITIES } from "./definitions/baseStats"
+import {
+  arsenalScoreCap,
+  closeDisabledTalentNodes,
+  closeUnclaimedOddityNodes,
+  DEFAULT_ENHANCEMENT_LEVEL,
+  resyncDefaultTalentsForBreakthrough,
+} from "./definitions/baseStats"
+import { ARSENAL_STORES } from "./data/baseStats"
+import {
+  defaultBreakthrough,
+  newestBreakthroughRelease,
+  releasedBreakthroughs,
+} from "./definitions/baseStats/breakthroughs"
 import type { Rotation, RotationStep } from "./engine/rotation"
-import { newRotationId, newStepId, isRotation } from "./engine/rotation"
+import { newRotationId, newStepId, isRotation, readFixedWindowSec } from "./engine/rotation"
+import type { CustomGraduationBuild } from "./engine/customGraduationBuild"
+import { isCustomGraduationBuild, newCustomGraduationBuildId } from "./engine/customGraduationBuild"
 import type { Skill, SkillHit, HitTrigger, TriggerCondition, HitVariant } from "./engine/skill"
 import {
   newSkillId,
@@ -21,10 +45,11 @@ import {
   newVariantId,
   isSkill,
   isHitVariant,
+  isQiPhase,
   isTriggerCondition,
 } from "./engine/skill"
 import { builtinSkillsForClass, builtinDebuffsForClass } from "./engine/builtinLibrary"
-import { seedSkillFromBuiltin } from "./engine/skill"
+import { belongsToClass, seedSkillFromBuiltin } from "./engine/skill"
 import { castTagOf } from "./engine/buffs/tags"
 import type { Buff, BuffScope, BuffStatEffect } from "./engine/buff"
 import type { StatKey } from "./engine/statRegistry"
@@ -33,21 +58,48 @@ import type { Debuff, DebuffDotSpec, DotDetonationSpec, DotStackShape } from "./
 import { isDebuff, makeDebuff } from "./engine/debuff"
 import { kvStore } from "./kvStore"
 import {
+  LATEST_CUSTOM_SKILLS_VERSION,
+  OLDEST_MIGRATABLE_CUSTOM_SKILLS_VERSION,
+  runCustomSkillMigrations,
+  migrateNeverAbradesSkill,
+  type RawCustomSkillsBlob,
+} from "./migrations/customSkills"
+import {
+  LATEST_CUSTOM_DEBUFFS_VERSION,
+  OLDEST_MIGRATABLE_CUSTOM_DEBUFFS_VERSION,
+  runCustomDebuffMigrations,
+  type RawCustomDebuffsBlob,
+} from "./migrations/customDebuffs"
+import {
   LATEST_PROFILES_VERSION,
   runProfileMigrations,
   migrateClassId,
   migrateEntityId,
+  migrateMysticId,
+  migrateRotationMysticIds,
   migrateGearWordId,
   migrateCurrentGearWordLabel,
+  migrateFormlessWordId,
   migrateSetId,
   migrateAttunementId,
   migrateAttuneTag,
   migrateCleftpeakBuffId,
+  migrateRiverFlowBuffId,
   migrateCleftpeakSetId,
   migrateCleftpeakTag,
+  migrateHawkingSetId,
+  enhancementLevelsFromLegacyNodes,
+  migrateDivinecraftField,
+  dropRetiredRotationId,
+  qiBreakOverrideFrom,
+  rotationWindowOf,
+  readQiBreakWindow,
 } from "./migrations"
 
 export { migrateClassId, migrateEntityId } from "./migrations"
+
+const migrateBuffId = (buffId: string): string =>
+  migrateRiverFlowBuffId(migrateCleftpeakBuffId(buffId))
 
 const KEY = "wwm.inputs"
 const VERSION = 5
@@ -153,21 +205,54 @@ function migrateRotationIds<T>(rotation: T): T {
   }
   if (Array.isArray(r.permanentBuffIds)) {
     next.permanentBuffIds = r.permanentBuffIds.map((buffId) =>
-      migrateCleftpeakBuffId(migrateEntityId(buffId)),
+      migrateBuffId(migrateEntityId(buffId)),
     )
   }
+  if (r.openingStacks !== undefined) next.openingStacks = sanitizeOpeningStacks(r.openingStacks)
+  if (r.qiBreak !== undefined) {
+    const window = readQiBreakWindow(r.qiBreak)
+    if (window) next.qiBreak = window
+    else delete next.qiBreak
+  }
+  if (r.fixedWindowSec !== undefined) {
+    const windowSec = readFixedWindowSec(r.fixedWindowSec)
+    if (windowSec === undefined) delete next.fixedWindowSec
+    else next.fixedWindowSec = windowSec
+  }
   delete (next as unknown as Record<string, unknown>).prePullHitsCount
-  return next as unknown as T
+  return migrateRotationMysticIds(next) as unknown as T
 }
 
-// A word outside the catalogue already scores nothing, so clearing the row costs
-// the user no contribution.
+// additive — see CLAUDE.md → "localStorage migrations"
+function sanitizeOpeningStacks(stored: unknown): Record<string, number> {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {}
+  const healed: Record<string, number> = {}
+  for (const [buffId, stacks] of Object.entries(stored as Record<string, unknown>)) {
+    if (typeof stacks !== "number" || !Number.isFinite(stacks) || stacks < 0) continue
+    const whole = Math.floor(stacks)
+    if (whole > 0) healed[migrateBuffId(migrateEntityId(buffId))] = whole
+  }
+  return healed
+}
+
+// A word this build cannot resolve is kept exactly as stored, roll included. It
+// scores nothing — every consumer skips a word with no spec — and clearing it
+// would destroy a roll the build that wrote it understood, which is what a
+// profile saved by a newer build and opened by an older one looks like.
 function repairGearWord(entry: unknown): unknown {
   if (!entry || typeof entry !== "object") return entry
   const stored = (entry as { word?: unknown }).word
   if (typeof stored !== "string") return entry
-  const renamed = migrateCurrentGearWordLabel(migrateGearWordId(stored))
-  return isGearWordId(renamed) ? { ...entry, word: renamed } : { ...entry, word: "", value: 0 }
+  const renamed = migrateFormlessWordId(migrateCurrentGearWordLabel(migrateGearWordId(stored)))
+  return isGearWordId(renamed) ? { ...entry, word: renamed } : { ...entry, word: stored }
+}
+
+// additive — see CLAUDE.md → "localStorage migrations". A word this build no
+// longer resolves stays in the history: it never scores anything, it only
+// hides a choice the player already recorded as retuned out.
+function sanitizeRetunedOutWords(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is string => typeof entry === "string" && entry !== "")
 }
 
 // The live registry is the allowlist, never `migrateSetId`'s table: that table
@@ -176,18 +261,24 @@ function repairGearWord(entry: unknown): unknown {
 // selection on every load. It survives here only as the pre-V11 display-name
 // hop for the two paths that never walk the chain — a bare imported profile
 // and the legacy `wwm.inputs` blob.
+//
+// A set id neither table nor registry knows is one this build has no option
+// for, and is handed back as stored rather than cleared.
 function selectableSetId(stored: string | null): string | null {
-  const renamed = migrateCleftpeakSetId(stored)
+  const renamed = migrateHawkingSetId(migrateCleftpeakSetId(stored))
   if (typeof renamed === "string" && SET_BY_ID[renamed] !== undefined) return renamed
-  const migrated = migrateCleftpeakSetId(migrateSetId(stored))
-  return typeof migrated === "string" && SET_BY_ID[migrated] !== undefined ? migrated : null
+  const migrated = migrateHawkingSetId(migrateCleftpeakSetId(migrateSetId(stored)))
+  if (typeof migrated === "string" && SET_BY_ID[migrated] !== undefined) return migrated
+  return typeof stored === "string" && stored !== "" ? stored : null
 }
 
 // additive — see CLAUDE.md → "localStorage migrations"
 function hydrateInputs(inputs: Inputs): Inputs {
   const { resistance: _legacyResistance, ...rest } = inputs as Inputs & { resistance?: number }
   void _legacyResistance
-  const next: Inputs = { ...(rest as Inputs) }
+  const next: Inputs = migrateDivinecraftField(
+    rest as unknown as Record<string, unknown>,
+  ) as unknown as Inputs
   // Also the entry point for the legacy `wwm.inputs` blob and imported
   // profiles, neither of which is version-walked. Must run before anything
   // that reads `classId` (arsenal / inner-way allowlist / talent defaults).
@@ -196,7 +287,10 @@ function hydrateInputs(inputs: Inputs): Inputs {
   // build's class rather than reaching `getSchool()`, which throws on an
   // unknown id — see CLAUDE.md → "localStorage migrations".
   if (!CLASS_IDS().includes(next.classId)) next.classId = defaultInputs.classId
-  next.selectedBuiltinRotationId = migrateEntityId(next.selectedBuiltinRotationId)
+  next.graduationBuildId = repairGraduationBuildId(next.classId, next.graduationBuildId)
+  next.selectedBuiltinRotationId = dropRetiredRotationId(
+    migrateEntityId(next.selectedBuiltinRotationId),
+  )
   next.set = selectableSetId(next.set)
   if (next.activeCustomRotation != null) {
     next.activeCustomRotation = migrateRotationIds(next.activeCustomRotation)
@@ -212,12 +306,14 @@ function hydrateInputs(inputs: Inputs): Inputs {
   if (typeof next.breakthrough !== "number" || !VALID_BREAKTHROUGHS.has(next.breakthrough)) {
     const trial =
       typeof legacyTargetId === "string" ? (legacyTargetId.match(/^(\d+)/)?.[1] ?? "") : ""
-    next.breakthrough = LEGACY_TARGET_TO_BREAKTHROUGH[trial] ?? 16
+    next.breakthrough = LEGACY_TARGET_TO_BREAKTHROUGH[trial] ?? defaultBreakthrough()
   }
   delete (next as unknown as Record<string, unknown>).targetId
   delete (next as unknown as Record<string, unknown>).shareDebuff5JingShen
   if (typeof next.dummyMode !== "boolean") next.dummyMode = false
   if (typeof next.allDamageBoost !== "number") next.allDamageBoost = 0
+  if (typeof next.independentDamageBoost !== "number") next.independentDamageBoost = 0
+  if (typeof next.gauntletsBoost !== "number") next.gauntletsBoost = 0
   delete (next as unknown as Record<string, unknown>).singleBurstBoost
   delete (next as unknown as Record<string, unknown>).singleControlBoost
   delete (next as unknown as Record<string, unknown>).groupAnomalyBoost
@@ -225,34 +321,41 @@ function hydrateInputs(inputs: Inputs): Inputs {
   if ("customSkills" in next) next.customSkills = undefined
   if ("customBuffs" in next) next.customBuffs = undefined
   if ("customDebuffs" in next) next.customDebuffs = undefined
+  if ("customGraduationBuild" in next) next.customGraduationBuild = undefined
   if (next.activeCustomRotation != null && !isRotation(next.activeCustomRotation)) {
     next.activeCustomRotation = null
   }
   if (typeof next.selectedBuiltinRotationId !== "string") next.selectedBuiltinRotationId = null
   delete (next as unknown as Record<string, unknown>).calcMode
-  if (next.bowSet !== "affinity" && next.bowSet !== "crit" && next.bowSet !== "precision") {
-    next.bowSet = null
-  }
-  if (
-    next.arsenal !== "general" &&
-    next.arsenal !== "bellstrike" &&
-    next.arsenal !== "stonesplit" &&
-    next.arsenal !== "silkbind" &&
-    next.arsenal !== "bamboocut"
-  ) {
+  // A selection this build has no option for is another build's, kept as
+  // stored: it matches no bonus here, and the panel that offers the choices
+  // shows none of them selected. Only a missing or non-string value falls back.
+  const storedBowSet = (next as unknown as Record<string, unknown>).bowSet
+  if (typeof storedBowSet !== "string" || storedBowSet === "") next.bowSet = null
+  const storedArsenal = (next as unknown as Record<string, unknown>).arsenal
+  if (typeof storedArsenal !== "string" || storedArsenal === "") {
     next.arsenal = defaultArsenalForClass(next.classId)
   }
   if (!Array.isArray(next.inventory)) next.inventory = []
   next.inventory = next.inventory.map((piece) => {
     const p = piece as Partial<typeof piece> & Record<string, unknown>
-    const { name: _legacyName, isNew: _rawIsNew, label: _rawLabel, note: _rawNote, ...rest } = p
+    const {
+      name: _legacyName,
+      isNew: _rawIsNew,
+      label: _rawLabel,
+      note: _rawNote,
+      retunedOutWords: _rawRetunedOutWords,
+      ...rest
+    } = p
     void _legacyName
     void _rawIsNew
     void _rawLabel
     void _rawNote
+    void _rawRetunedOutWords
     const isNew = p.isNew === true
     const label = sanitizeGearPieceText(p.label, 40)
     const note = sanitizeGearPieceText(p.note, 500)
+    const retunedOutWords = sanitizeRetunedOutWords(p.retunedOutWords)
     const rawWords = (rest as unknown as { words?: unknown }).words
     const words = Array.isArray(rawWords) ? rawWords.map(repairGearWord) : rawWords
     return {
@@ -264,6 +367,9 @@ function hydrateInputs(inputs: Inputs): Inputs {
       ...(isNew ? { isNew: true } : {}),
       ...(label ? { label } : {}),
       ...(note ? { note } : {}),
+      ...(retunedOutWords.length > 0
+        ? { retunedOutWords: retunedOutWords as GearPiece["retunedOutWords"] }
+        : {}),
     }
   })
   if (!next.equipped || typeof next.equipped !== "object") {
@@ -274,9 +380,13 @@ function hydrateInputs(inputs: Inputs): Inputs {
   // additive value-level repair — see CLAUDE.md → "localStorage migrations"
   //
   // A slot used to be identified by its display name. It now carries a stable
-  // `id`, healed here from whatever the profile stored. A slot naming an inner
-  // way that no longer exists resolves to nothing the class allows and is
-  // cleared, which is the same path an already-disallowed slot takes.
+  // `id`, healed here from whatever the profile stored.
+  //
+  // A slot naming an inner way this build has no definition for is kept as
+  // stored — it resolves to no definition, so it reaches no panel stat and no
+  // mechanic. A slot naming one this build knows but the class may not hold is
+  // cleared instead: that one would be scored, and scoring a build the class
+  // cannot have is the invisible wrong number the allowlist exists to stop.
   if (Array.isArray(next.mindMethods)) {
     const allowed = new Set(allowedInnerWaysForClass(next.classId))
     const seen = new Set<string>()
@@ -287,7 +397,8 @@ function hydrateInputs(inputs: Inputs): Inputs {
       const disallowed = !!innerWayId && allowed.size > 0 && !allowed.has(innerWayId)
       const duplicate = !!innerWayId && seen.has(innerWayId)
       if (!innerWayId) return { ...slot, id: undefined, name: "", stacks: "" }
-      if (!known || disallowed || duplicate) return { id: undefined, name: "", stacks: "" }
+      if (!known) return { ...slot, id: innerWayId, stacks: slot.stacks || "tier 6" }
+      if (disallowed || duplicate) return { id: undefined, name: "", stacks: "" }
       seen.add(innerWayId)
       return {
         ...slot,
@@ -318,50 +429,92 @@ function hydrateInputs(inputs: Inputs): Inputs {
         } as Inputs["martialArtsTalents"][number]
       })
       .filter((r) => !r.id.startsWith("default-"))
-    next.martialArtsTalents = [...healed, ...getDefaultTalentsForClass(next.classId)]
-  }
-  if (!next.oddities || typeof next.oddities !== "object" || Array.isArray(next.oddities)) {
-    next.oddities = JSON.parse(JSON.stringify(DEFAULT_ODDITIES)) as OddityRegions
-  } else {
-    const healed: OddityRegions = {}
-    for (const [region, nodes] of Object.entries(next.oddities as Record<string, unknown>)) {
-      if (!Array.isArray(nodes)) continue
-      healed[region] = (nodes as unknown[])
-        .filter((n): n is Record<string, unknown> => !!n && typeof n === "object")
-        .map((n, i) => ({
-          id: typeof n.id === "number" ? n.id : i + 1,
-          stat: typeof n.stat === "string" ? (n.stat as OddityNode["stat"]) : "maxPhys",
-          value: typeof n.value === "number" ? n.value : 0,
-          enabled: typeof n.enabled === "boolean" ? n.enabled : true,
-          icon: typeof n.icon === "string" ? n.icon : undefined,
-        }))
-    }
-    for (const [region, defNodes] of Object.entries(DEFAULT_ODDITIES)) {
-      if (!healed[region]) healed[region] = defNodes.map((n) => ({ ...n }))
-    }
-    next.oddities = healed
+    next.martialArtsTalents = healed as Inputs["martialArtsTalents"]
+    next.martialArtsTalents = resyncDefaultTalentsForBreakthrough(next).martialArtsTalents
   }
   {
+    const stored = next.unclaimedOddityNodes as unknown
+    const healed: UnclaimedOddityNodes = {}
+    if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+      for (const [region, ids] of Object.entries(stored as Record<string, unknown>)) {
+        if (!Array.isArray(ids)) continue
+        const closed = closeUnclaimedOddityNodes(
+          region,
+          ids.filter((id): id is number => typeof id === "number"),
+        )
+        if (closed.length > 0) healed[region] = closed
+      }
+    }
+    next.unclaimedOddityNodes = healed
+  }
+  {
+    const stored = next.disabledTalentNodes as unknown
+    const ids = Array.isArray(stored)
+      ? stored.filter((id): id is number => typeof id === "number")
+      : []
+    next.disabledTalentNodes = closeDisabledTalentNodes(ids)
+  }
+  {
+    const stored = next.enhancements as unknown
+    const bySlot = Array.isArray(stored)
+      ? enhancementLevelsFromLegacyNodes(stored)
+      : stored && typeof stored === "object"
+        ? (stored as Record<string, unknown>)
+        : {}
+    const healed = {} as EnhancementLevels
+    for (const slot of GEAR_SLOTS) {
+      const value = bySlot[slot]
+      healed[slot] =
+        typeof value === "number" && Number.isFinite(value) && value >= 0
+          ? Math.round(value)
+          : DEFAULT_ENHANCEMENT_LEVEL
+    }
+    next.enhancements = healed
+  }
+  {
+    const stored =
+      next.arsenalScores &&
+      typeof next.arsenalScores === "object" &&
+      !Array.isArray(next.arsenalScores)
+        ? (next.arsenalScores as Record<string, unknown>)
+        : {}
+    const healed: ArsenalScores = {}
+    for (let store = 1; store <= ARSENAL_STORES.length; store++) {
+      const value = stored[store]
+      healed[store] =
+        typeof value === "number" && Number.isFinite(value) && value >= 0
+          ? value
+          : arsenalScoreCap(store)
+    }
+    next.arsenalScores = healed
+  }
+  {
+    if (next.resourceSettings) {
+      next.resourceSettings = { ...next.resourceSettings }
+      for (const resource of classDefinition(next.classId)?.resources ?? []) {
+        next.resourceSettings[resource.id] = resolveResourceSettings(
+          resource,
+          next.resourceSettings[resource.id],
+        )
+      }
+    }
     const def = defaultCombatSettings()
     const raw = (next as unknown as { combatSettings?: unknown }).combatSettings
     const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
-    const qbRaw =
-      r.qiBreak && typeof r.qiBreak === "object" ? (r.qiBreak as Record<string, unknown>) : {}
-    if (r.fireOil === true && next.tianGongElement == null) next.tianGongElement = "fire"
+    if (r.fireOil === true && next.divinecraft == null) next.divinecraft = "fire"
     if (r.vulnerability === true) next.shareEasyHurt = true
+    // `revelryScript` named a boolean toggle this build no longer offers or
+    // reads — kept rather than dropped, per CLAUDE.md → "localStorage migrations".
+    const legacyFields: Record<string, unknown> = {}
+    if ("revelryScript" in r) legacyFields.revelryScript = r.revelryScript
     next.combatSettings = {
-      qiBreak: {
-        enabled: typeof qbRaw.enabled === "boolean" ? qbRaw.enabled : def.qiBreak.enabled,
-        startSec: typeof qbRaw.startSec === "number" ? qbRaw.startSec : def.qiBreak.startSec,
-        durationSec:
-          typeof qbRaw.durationSec === "number" ? qbRaw.durationSec : def.qiBreak.durationSec,
-        lowQiLeadSec:
-          typeof qbRaw.lowQiLeadSec === "number" ? qbRaw.lowQiLeadSec : def.qiBreak.lowQiLeadSec,
-      },
+      ...legacyFields,
+      qiBreakOverride: qiBreakOverrideFrom(r, rotationWindowOf(next)),
       dragonsBreath: typeof r.dragonsBreath === "boolean" ? r.dragonsBreath : def.dragonsBreath,
       healerBuff: typeof r.healerBuff === "boolean" ? r.healerBuff : def.healerBuff,
       breakExtension: typeof r.breakExtension === "boolean" ? r.breakExtension : def.breakExtension,
-      revelryScript: typeof r.revelryScript === "boolean" ? r.revelryScript : def.revelryScript,
+      // Kept as stored even when unrecognised, same as `bowSet`/`arsenal` above.
+      script: typeof r.script === "string" && r.script !== "" ? (r.script as ScriptId) : def.script,
       dragonHeadFullStacks:
         typeof r.dragonHeadFullStacks === "boolean"
           ? r.dragonHeadFullStacks
@@ -380,22 +533,55 @@ function makeDefaultProfile(name: string, inputs: Inputs): StoredProfile {
   return { id: newProfileId(), name, inputs: hydrateInputs(inputs) }
 }
 
+function followBreakthroughReleases(inputs: Inputs, now: number): Inputs {
+  const newestRelease = newestBreakthroughRelease(now)
+  const followedRelease =
+    typeof inputs.followedBreakthroughRelease === "number" ? inputs.followedBreakthroughRelease : 0
+  if (followedRelease === newestRelease) return inputs
+  let breakthrough = inputs.breakthrough
+  for (const release of releasedBreakthroughs(now)) {
+    if (release.breakthrough <= followedRelease) continue
+    const supersededDefault = defaultBreakthrough(release.at - 1)
+    if (breakthrough === supersededDefault) breakthrough = release.breakthrough
+  }
+  const followed = { ...inputs, breakthrough, followedBreakthroughRelease: newestRelease }
+  return breakthrough === inputs.breakthrough
+    ? followed
+    : resyncDefaultTalentsForBreakthrough(followed)
+}
+
 export function loadProfiles(): ProfilesState & { firstRun: boolean } {
+  const now = Date.now()
   try {
     const raw = kvStore.get(PROFILES_KEY)
     if (raw) {
       const result = runProfileMigrations(JSON.parse(raw))
       const migrated = result?.blob as ProfilesBlob | undefined
       if (migrated && Array.isArray(migrated.profiles)) {
-        const profiles = migrated.profiles
+        const hydrated = migrated.profiles
           .filter(isStoredProfile)
-          .map((p) => ({ ...p, inputs: hydrateInputs(p.inputs) }))
+          .map((stored) => ({ ...stored, inputs: hydrateInputs(stored.inputs) }))
+        const profiles = hydrated.map((profile) => ({
+          ...profile,
+          inputs: followBreakthroughReleases(profile.inputs, now),
+        }))
+        const releaseFollowed = profiles.some(
+          (profile, index) => profile.inputs !== hydrated[index].inputs,
+        )
         if (profiles.length > 0) {
           const activeId = profiles.some((p) => p.id === migrated.activeId)
             ? migrated.activeId
             : profiles[0].id
           // Persist the upgraded blob so the chain is walked once, not per load.
-          if (result && (result.applied.length > 0 || migrated.v !== PROFILES_VERSION)) {
+          // Never for a blob a newer build wrote: the walk left it alone, and
+          // writing it back would stamp it at this build's version and hand it
+          // whatever this build made of the fields it does not know.
+          const storedByNewerBuild = typeof migrated.v === "number" && migrated.v > PROFILES_VERSION
+          if (
+            !storedByNewerBuild &&
+            (releaseFollowed ||
+              (result && (result.applied.length > 0 || migrated.v !== PROFILES_VERSION)))
+          ) {
             saveProfiles({ profiles, activeId })
           }
           return { profiles, activeId, firstRun: false }
@@ -406,7 +592,11 @@ export function loadProfiles(): ProfilesState & { firstRun: boolean } {
 
   const legacy = loadInputs()
   if (legacy) {
-    const profile = makeDefaultProfile("Default", legacy)
+    const legacyProfile = makeDefaultProfile("Default", legacy)
+    const profile = {
+      ...legacyProfile,
+      inputs: followBreakthroughReleases(legacyProfile.inputs, now),
+    }
     const state: ProfilesState = { profiles: [profile], activeId: profile.id }
     saveProfiles(state)
     try {
@@ -554,8 +744,6 @@ export function importCustomRotation(text: string): Rotation {
         .map((s) => ({
           id: newStepId(),
           skillId: s.skillId,
-          hitCount: typeof s.hitCount === "number" ? s.hitCount : 1,
-          prePull: typeof s.prePull === "boolean" ? s.prePull : false,
         }))
     : []
   const fresh: Rotation = {
@@ -566,17 +754,94 @@ export function importCustomRotation(text: string): Rotation {
     permanentBuffIds: Array.isArray(candidate.permanentBuffIds)
       ? candidate.permanentBuffIds.filter((x): x is string => typeof x === "string")
       : [],
+    openingStacks: sanitizeOpeningStacks(candidate.openingStacks),
     createdAt: now,
     updatedAt: now,
   }
+  const importedQiBreak = readQiBreakWindow(candidate.qiBreak)
+  if (importedQiBreak) fresh.qiBreak = importedQiBreak
   if (!isRotation(fresh)) {
     throw new Error("Imported rotation failed validation (missing or invalid fields)")
   }
   return fresh
 }
 
+const CUSTOM_GRADUATION_KEY = "wwm.customGraduationBuilds"
+const CUSTOM_GRADUATION_VERSION = 1
+
+interface CustomGraduationBlob {
+  v: number
+  builds: CustomGraduationBuild[]
+}
+
+export function loadCustomGraduationBuilds(): CustomGraduationBuild[] {
+  try {
+    const raw = kvStore.get(CUSTOM_GRADUATION_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as CustomGraduationBlob
+    if (parsed.v !== CUSTOM_GRADUATION_VERSION) return []
+    if (!Array.isArray(parsed.builds)) return []
+    return parsed.builds.filter(isCustomGraduationBuild)
+  } catch {
+    return []
+  }
+}
+
+function writeCustomGraduationBuilds(builds: CustomGraduationBuild[]): void {
+  try {
+    const blob: CustomGraduationBlob = { v: CUSTOM_GRADUATION_VERSION, builds }
+    kvStore.set(CUSTOM_GRADUATION_KEY, JSON.stringify(blob))
+  } catch {}
+}
+
+export function customGraduationBuildFor(classId: string): CustomGraduationBuild | null {
+  return loadCustomGraduationBuilds().find((build) => build.classId === classId) ?? null
+}
+
+export function saveCustomGraduationBuild(build: CustomGraduationBuild): CustomGraduationBuild {
+  const next: CustomGraduationBuild = { ...build, updatedAt: new Date().toISOString() }
+  const others = loadCustomGraduationBuilds().filter((saved) => saved.classId !== next.classId)
+  writeCustomGraduationBuilds([...others, next])
+  return next
+}
+
+export function deleteCustomGraduationBuild(classId: string): void {
+  const others = loadCustomGraduationBuilds().filter((saved) => saved.classId !== classId)
+  writeCustomGraduationBuilds(others)
+}
+
+export function exportCustomGraduationBuild(build: CustomGraduationBuild): string {
+  return JSON.stringify(build, null, 2)
+}
+
+export function importCustomGraduationBuild(
+  text: string,
+  targetClassId: string,
+): CustomGraduationBuild {
+  const parsed = JSON.parse(text) as unknown
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Imported value is not an object")
+  }
+  const candidate = parsed as CustomGraduationBuild
+  const now = new Date().toISOString()
+  const fresh: CustomGraduationBuild = {
+    ...candidate,
+    id: newCustomGraduationBuildId(),
+    name:
+      typeof candidate.name === "string" && candidate.name !== ""
+        ? candidate.name
+        : "Imported build",
+    classId: targetClassId,
+    createdAt: now,
+    updatedAt: now,
+  }
+  if (!isCustomGraduationBuild(fresh)) {
+    throw new Error("Imported graduation build failed validation (missing or invalid fields)")
+  }
+  return fresh
+}
+
 const CUSTOM_SKILLS_KEY = "wwm.customSkills"
-const CUSTOM_SKILLS_VERSION = 3
 
 interface CustomSkillsBlob {
   v: number
@@ -675,9 +940,6 @@ const LEGACY_TRIGGERED_BY: Record<string, readonly string[]> = {
   "cast:perfectDodge": ["mirageBonus"],
   "cast:perfectDodgeFull": ["mirageBonus"],
   "cast:ghostlySteps": ["mirage"],
-  "cast:fluteOfTheTidesCancel": ["fluteBoost"],
-  "cast:fluteOfTheTidesFull": ["fluteBoost"],
-  "cast:fluteOfTheTidesPrepull": ["fluteBoost"],
   "cast:healerBuff": ["healerBuff"],
   "cast:dragonHeadPlus": ["surgingWaves"],
   "cast:goldenBodyCancel": ["rainwhisperShield"],
@@ -706,7 +968,7 @@ const LEGACY_TRIGGERED_BY: Record<string, readonly string[]> = {
 const MIGRATED_LEGACY_AFFECTS = new Map(
   Object.entries(LEGACY_AFFECTS).map(([tag, buffIds]) => [
     migrateCleftpeakTag(tag),
-    buffIds.map(migrateCleftpeakBuffId),
+    buffIds.map(migrateBuffId),
   ]),
 )
 
@@ -737,6 +999,21 @@ function healJadewareTrigger(id: string, triggersBuffs: string[]): string[] {
   return untouched ? ["jadeware", ...triggersBuffs] : triggersBuffs
 }
 
+// additive value-level repair — see CLAUDE.md → "localStorage migrations"
+//
+// Wolfchaser's Art rank 3 raises these seven skills' damage; a copy seeded
+// before that bonus was modeled has no `receives` field at all, so it is not
+// caught by the `Array.isArray` branch below.
+const RECEIVES_BEFORE_WOLFCHASERS_ART_MARTIAL_DAMAGE = new Set([
+  "bellstrikeUmbra-swordq",
+  "bellstrikeUmbra-swordqfollowup",
+  "bellstrikeUmbra-swordq-follow-up-1-hit-cancel",
+  "bellstrikeUmbra-swordq-follow-up-2-hit-cancel",
+  "bellstrikeUmbra-sword-martial-qqq",
+  "bellstrikeUmbra-spearq",
+  "bellstrikeUmbra-spearq-5-hit-cancel",
+])
+
 // A skill's `type:<skillType>` tag is derived, never stored, so it is added
 // back in before the lookup — matching `skillTagsOf` (`engine/buffs/tags.ts`).
 function healSkillReach(
@@ -745,60 +1022,25 @@ function healSkillReach(
   tags: readonly string[],
 ): Pick<Skill, "receives" | "triggersBuffs"> {
   const legacyTags = skill.skillType ? [...tags, `type:${skill.skillType}`] : tags
-  const receives = Array.isArray(skill.receives) ? skill.receives : legacyReceives(legacyTags)
+  const receives = Array.isArray(skill.receives)
+    ? skill.receives
+    : RECEIVES_BEFORE_WOLFCHASERS_ART_MARTIAL_DAMAGE.has(id)
+      ? ["wolfchasersArtMartialDamage"]
+      : legacyReceives(legacyTags)
   const triggersBuffs = Array.isArray(skill.triggersBuffs)
     ? skill.triggersBuffs
     : [...(LEGACY_TRIGGERED_BY[castTagOf(skill)] ?? [])]
   return {
-    receives: receives.map(migrateCleftpeakBuffId),
-    triggersBuffs: healJadewareTrigger(id, triggersBuffs).map(migrateCleftpeakBuffId),
+    receives: receives.map(migrateBuffId),
+    triggersBuffs: healJadewareTrigger(id, triggersBuffs).map(migrateBuffId),
   }
 }
 
 function healDebuffReceives(debuff: Pick<Debuff, "receives" | "tags" | "dot">): string[] {
-  if (Array.isArray(debuff.receives)) return debuff.receives.map(migrateCleftpeakBuffId)
+  if (Array.isArray(debuff.receives)) return debuff.receives.map(migrateBuffId)
   const tags = debuff.tags ?? []
   const legacyTags = debuff.dot ? [...tags, `type:${debuff.dot.skillType || "sustain"}`] : tags
   return legacyReceives(legacyTags)
-}
-
-// These coefficients were replaced wholesale, so a stored copy carrying the
-// superseded workbook numbers scores ~69x low. Only
-// an untouched copy is rewritten — a hit the user actually edited is left
-// alone, since we cannot tell a stale value from a deliberate one once it
-// differs.
-const SUPERSEDED_DRAGON_HEAD_HITS: Record<
-  string,
-  { from: [number, number, number]; to: [number, number, number] }
-> = {
-  "-dragon-head-plus": {
-    from: [25.200406, 4695.46, 37.800609],
-    to: [17.3793, 3237, 26.0689],
-  },
-  "-dragon-head": {
-    from: [36.00058, 6707.8, 54.00087],
-    to: [24.827571, 4624.285714, 37.241286],
-  },
-}
-
-function healDragonHeadCoefficients(id: string, hits: SkillHit[]): SkillHit[] {
-  const suffix = id.endsWith("-dragon-head-plus") ? "-dragon-head-plus" : "-dragon-head"
-  if (!id.endsWith(suffix)) return hits
-  const swap = SUPERSEDED_DRAGON_HEAD_HITS[suffix]
-  if (!swap) return hits
-  return hits.map((hit) => {
-    const untouched =
-      hit.physMultiplier === swap.from[0] &&
-      hit.physFixed === swap.from[1] &&
-      hit.attributeMultiplier === swap.from[2]
-    if (!untouched) return hit
-    return {
-      ...hit,
-      physMultiplier: swap.to[0],
-      physFixed: swap.to[1],
-      attributeMultiplier: swap.to[2],
-    }
-  })
 }
 
 // additive — see CLAUDE.md → "localStorage migrations"
@@ -816,12 +1058,7 @@ function hydrateSkill(s: Skill): Skill {
     classId: migrateClassId(s.classId),
     triggerable: typeof s.triggerable === "boolean" ? s.triggerable : true,
     tags: healedTags,
-    hits: Array.isArray(s.hits)
-      ? healDragonHeadCoefficients(
-          id,
-          s.hits.map((h) => hydrateSkillHit(h)),
-        )
-      : s.hits,
+    hits: Array.isArray(s.hits) ? s.hits.map((h) => hydrateSkillHit(h)) : s.hits,
     ...healSkillReach(id, s, reachTags),
   }
 }
@@ -840,18 +1077,23 @@ function hydrateSkillHit(h: SkillHit): SkillHit {
   if (Array.isArray(h.triggers)) {
     hit.triggers = h.triggers.map((tr) => hydrateHitTrigger(tr))
   }
+  if (Array.isArray(h.conditions)) {
+    hit.conditions = h.conditions.filter(isTriggerCondition).map(migrateTriggerCondition)
+  } else {
+    delete hit.conditions
+  }
   return hit
 }
 
 function migrateTriggerCondition(condition: TriggerCondition): TriggerCondition {
-  return { ...condition, buffId: migrateCleftpeakBuffId(condition.buffId) }
+  return { ...condition, buffId: migrateMysticId(migrateBuffId(condition.buffId)) }
 }
 
 function hydrateHitTrigger(tr: HitTrigger): HitTrigger {
   if (!tr || typeof tr !== "object") return tr
   const trigger: HitTrigger = {
     ...tr,
-    targetId: migrateCleftpeakBuffId(migrateEntityId(tr.targetId)),
+    targetId: migrateMysticId(migrateBuffId(migrateEntityId(tr.targetId))),
     condition: tr.condition ? migrateTriggerCondition(tr.condition) : null,
   }
   if (Array.isArray(tr.conditions)) {
@@ -866,22 +1108,29 @@ export function loadCustomSkills(): Skill[] {
   try {
     const raw = kvStore.get(CUSTOM_SKILLS_KEY)
     if (!raw) return []
-    const parsed = JSON.parse(raw) as CustomSkillsBlob
-    if (parsed.v !== CUSTOM_SKILLS_VERSION) return []
-    if (!Array.isArray(parsed.skills)) return []
-    return parsed.skills.map(hydrateSkill).filter(isSkill)
+    const parsed = JSON.parse(raw) as RawCustomSkillsBlob
+    if (typeof parsed.v !== "number" || parsed.v < OLDEST_MIGRATABLE_CUSTOM_SKILLS_VERSION)
+      return []
+    const result = runCustomSkillMigrations(parsed)
+    if (!result || !Array.isArray(result.blob.skills)) return []
+    const skills = result.blob.skills.map((skill) => hydrateSkill(skill as Skill)).filter(isSkill)
+    const storedByNewerBuild = result.blob.v > LATEST_CUSTOM_SKILLS_VERSION
+    if (!storedByNewerBuild && (result.applied.length > 0 || parsed.v !== result.blob.v)) {
+      writeCustomSkills(skills)
+    }
+    return skills
   } catch {
     return []
   }
 }
 
 export function loadCustomSkillsForClass(classId: string): Skill[] {
-  return loadCustomSkills().filter((s) => s.classId === classId)
+  return loadCustomSkills().filter((s) => belongsToClass(s, classId))
 }
 
 function writeCustomSkills(skills: Skill[]): void {
   try {
-    const blob: CustomSkillsBlob = { v: CUSTOM_SKILLS_VERSION, skills }
+    const blob: CustomSkillsBlob = { v: LATEST_CUSTOM_SKILLS_VERSION, skills }
     kvStore.set(CUSTOM_SKILLS_KEY, JSON.stringify(blob))
   } catch {}
 }
@@ -1032,6 +1281,15 @@ function importedTrigger(t: unknown): HitTrigger {
   if (Array.isArray(c.conditions)) {
     trigger.conditions = c.conditions.filter(isTriggerCondition)
   }
+  if (c.appliesOnCastEnd === true) trigger.appliesOnCastEnd = true
+  if (typeof c.transferFrom === "string" && c.transferFrom) trigger.transferFrom = c.transferFrom
+  if (isQiPhase(c.phase)) trigger.phase = c.phase
+  if (
+    typeof c.cooldownFrames === "number" &&
+    Number.isFinite(c.cooldownFrames) &&
+    c.cooldownFrames >= 0
+  )
+    trigger.cooldownFrames = c.cooldownFrames
   return trigger
 }
 
@@ -1055,6 +1313,10 @@ function importedHit(h: unknown): SkillHit {
   if (Array.isArray(c.variants)) {
     const variants = c.variants.map(importedVariant).filter((v): v is HitVariant => v !== null)
     if (variants.length > 0) hit.variants = variants
+  }
+  if (Array.isArray(c.conditions)) {
+    const conditions = c.conditions.filter(isTriggerCondition)
+    if (conditions.length > 0) hit.conditions = conditions
   }
   return hit
 }
@@ -1080,7 +1342,8 @@ export function importCustomSkill(text: string, targetClassId: string): Skill {
     castFrames: typeof c.castFrames === "number" ? c.castFrames : 0,
     triggerable: typeof c.triggerable === "boolean" ? c.triggerable : true,
     elevatedAttributeMultiplier: c.elevatedAttributeMultiplier === false ? false : undefined,
-    guaranteedPrecision: c.guaranteedPrecision === true ? true : undefined,
+    neverAbrades:
+      (migrateNeverAbradesSkill(c) as Partial<Skill>).neverAbrades === true ? true : undefined,
     guaranteedNormal: c.guaranteedNormal === true ? true : undefined,
     tags: Array.isArray(c.tags) ? c.tags.filter((t): t is string => typeof t === "string") : [],
     receives: Array.isArray(c.receives)
@@ -1157,13 +1420,17 @@ function hydrateBuff(b: Buff): Buff {
   const { dot: _drop, ...rest0 } = b as Buff & { dot?: unknown }
   void _drop
   const rest = { ...rest0, id: migrateEntityId(b.id), classId: migrateClassId(b.classId) }
-  return {
+  const hydrated: Buff = {
     ...(rest as Buff),
     scope: b.scope === "team" ? "team" : "player",
     stackScaling: b.stackScaling === "perStack" ? "perStack" : "flat",
     maxStacks: typeof b.maxStacks === "number" && b.maxStacks > 0 ? b.maxStacks : 1,
     effects: withRenamedStatKeys(b.effects),
   }
+  if (b.onExpire)
+    hydrated.onExpire = { ...b.onExpire, targetId: migrateMysticId(b.onExpire.targetId) }
+  if (Array.isArray(b.onMaxStacks)) hydrated.onMaxStacks = b.onMaxStacks.map(hydrateHitTrigger)
+  return hydrated
 }
 
 // additive value-level repair — see CLAUDE.md → "localStorage migrations"
@@ -1250,13 +1517,7 @@ function migrateStatusStoresIfNeeded(): void {
 
     let existingDebuffs: Debuff[] = []
     try {
-      const existingRaw = kvStore.get(CUSTOM_DEBUFFS_KEY)
-      if (existingRaw) {
-        const parsedD = JSON.parse(existingRaw) as { v?: number; debuffs?: unknown[] }
-        if (parsedD.v === CUSTOM_DEBUFFS_VERSION && Array.isArray(parsedD.debuffs)) {
-          existingDebuffs = parsedD.debuffs.filter(isDebuff)
-        }
-      }
+      existingDebuffs = readStoredDebuffs().debuffs
     } catch {}
     writeCustomDebuffs([...existingDebuffs, ...debuffs])
   } catch {}
@@ -1333,7 +1594,6 @@ export function importCustomBuff(text: string, targetClassId: string): Buff {
 }
 
 const CUSTOM_DEBUFFS_KEY = "wwm.customDebuffs"
-const CUSTOM_DEBUFFS_VERSION = 2
 
 interface CustomDebuffsBlob {
   v: number
@@ -1352,9 +1612,35 @@ interface CustomDebuffsBlob {
 const DRONE_DEBUFF_RECEIVES_BEFORE_LINGERING_BONE = ["soulShaken"]
 const DRONE_DEBUFF_ID = /^debuff-silkbindJade-umbdrone-\d+hit$/
 
-function healDroneDebuffReach(d: Debuff): Pick<Debuff, "receives" | "triggersBuffs"> {
-  const receives = healDebuffReceives(d)
-  const triggersBuffs = d.triggersBuffs?.map(migrateCleftpeakBuffId)
+// additive value-level repair — see CLAUDE.md → "localStorage migrations"
+//
+// The reach these four Bellstrike Umbra DoTs carried before their class
+// affinity-damage buff was widened to every damage-over-time tick. A copy
+// seeded then keeps missing it, with no editor surface showing the gap. Only
+// a list still identical to what was seeded is rewritten, same reason as the
+// drone repair below.
+const UMBRA_DOT_RECEIVES_BEFORE_BLEEDING_DAMAGE = ["soulShaken"]
+const UMBRA_DOT_IDS_MISSING_BLEEDING_DAMAGE = new Set([
+  "debuff-bellstrikeUmbra-toad-poison",
+  "debuff-bellstrikeUmbra-dark-fire",
+  "debuff-bellstrikeUmbra-flute-ripple",
+  "debuff-bellstrikeUmbra-bitter-season-tick",
+  "debuff-mystic-toad-poison",
+  "debuff-mystic-smolder",
+  "debuff-mystic-flute-ripple",
+])
+
+function healUmbraDotBleedingDamageReach(id: string, receives: string[]): string[] {
+  if (!UMBRA_DOT_IDS_MISSING_BLEEDING_DAMAGE.has(id)) return receives
+  const seeded =
+    receives.length === UMBRA_DOT_RECEIVES_BEFORE_BLEEDING_DAMAGE.length &&
+    UMBRA_DOT_RECEIVES_BEFORE_BLEEDING_DAMAGE.every((buffId, index) => receives[index] === buffId)
+  return seeded ? ["bellstrikeUmbraBleedingDamage", ...receives] : receives
+}
+
+function healDebuffReach(d: Debuff): Pick<Debuff, "receives" | "triggersBuffs"> {
+  const receives = healUmbraDotBleedingDamageReach(d.id, healDebuffReceives(d))
+  const triggersBuffs = d.triggersBuffs?.map(migrateBuffId)
   if (!DRONE_DEBUFF_ID.test(d.id)) return { receives, triggersBuffs }
   const seeded =
     receives.length === DRONE_DEBUFF_RECEIVES_BEFORE_LINGERING_BONE.length &&
@@ -1393,31 +1679,44 @@ function hydrateDebuff(d: Debuff): Debuff {
     stackScaling: d.stackScaling === "perStack" ? "perStack" : "flat",
     maxStacks: typeof d.maxStacks === "number" && d.maxStacks > 0 ? d.maxStacks : 1,
     detonation,
-    ...healDroneDebuffReach(d),
+    ...healDebuffReach(d),
+  }
+}
+
+function readStoredDebuffs(): { debuffs: Debuff[]; persist: boolean } {
+  const raw = kvStore.get(CUSTOM_DEBUFFS_KEY)
+  if (!raw) return { debuffs: [], persist: false }
+  const parsed = JSON.parse(raw) as RawCustomDebuffsBlob
+  if (typeof parsed.v !== "number" || parsed.v < OLDEST_MIGRATABLE_CUSTOM_DEBUFFS_VERSION) {
+    return { debuffs: [], persist: false }
+  }
+  const result = runCustomDebuffMigrations(parsed)
+  if (!result || !Array.isArray(result.blob.debuffs)) return { debuffs: [], persist: false }
+  const storedByNewerBuild = result.blob.v > LATEST_CUSTOM_DEBUFFS_VERSION
+  return {
+    debuffs: result.blob.debuffs.filter(isDebuff).map(hydrateDebuff),
+    persist: !storedByNewerBuild && (result.applied.length > 0 || parsed.v !== result.blob.v),
   }
 }
 
 export function loadCustomDebuffs(): Debuff[] {
   migrateStatusStoresIfNeeded()
   try {
-    const raw = kvStore.get(CUSTOM_DEBUFFS_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as CustomDebuffsBlob
-    if (parsed.v !== CUSTOM_DEBUFFS_VERSION) return []
-    if (!Array.isArray(parsed.debuffs)) return []
-    return parsed.debuffs.filter(isDebuff).map(hydrateDebuff)
+    const { debuffs, persist } = readStoredDebuffs()
+    if (persist) writeCustomDebuffs(debuffs)
+    return debuffs
   } catch {
     return []
   }
 }
 
 export function loadCustomDebuffsForClass(classId: string): Debuff[] {
-  return loadCustomDebuffs().filter((d) => d.classId === classId)
+  return loadCustomDebuffs().filter((d) => belongsToClass(d, classId))
 }
 
 function writeCustomDebuffs(debuffs: Debuff[]): void {
   try {
-    const blob: CustomDebuffsBlob = { v: CUSTOM_DEBUFFS_VERSION, debuffs }
+    const blob: CustomDebuffsBlob = { v: LATEST_CUSTOM_DEBUFFS_VERSION, debuffs }
     kvStore.set(CUSTOM_DEBUFFS_KEY, JSON.stringify(blob))
   } catch {}
 }

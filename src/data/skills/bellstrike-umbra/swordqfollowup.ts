@@ -3,6 +3,7 @@ import { applyDot } from "../../../definitions/skills/triggers"
 import { ATTUNE, CAST, PROP, WEAPON } from "../ids"
 import { BUFF } from "../buffs/ids"
 import { SKILL, DEBUFF } from "./ids"
+import { STRATEGIC_SWORD_RECEIVES } from "./receives"
 
 export const swordqfollowup = defineSkill({
   id: SKILL.swordqfollowup,
@@ -15,42 +16,44 @@ export const swordqfollowup = defineSkill({
   attributeAttack: "Bellstrike",
   castTag: CAST.swordMartialQQ,
   triggersBuffs: [BUFF.jadeware],
-  castFrames: 66,
+  receives: STRATEGIC_SWORD_RECEIVES,
+  // Cast length to the earliest next input and hit frames: in-game animation, 2026-09-09.
+  castFrames: 64,
   triggerable: true,
   hits: [
     hit(0, {
-      frame: 0,
-      physMultiplier: 0.5441,
-      attributeMultiplier: 0.8161,
-      physFixed: 150,
+      frame: 5,
+      physMultiplier: 0.544068,
+      attributeMultiplier: 0.816102,
+      physFixed: 150.6,
       attributeFixed: 82,
       triggers: [applyDot({ target: DEBUFF.bleedTick })],
     }),
     hit(1, {
-      frame: 16,
-      physMultiplier: 0.5441,
-      attributeMultiplier: 0.8161,
-      physFixed: 150,
-      attributeFixed: 82,
+      frame: 23,
+      physMultiplier: 0.408051,
+      attributeMultiplier: 0.6120765,
+      physFixed: 112.95,
+      attributeFixed: 61.5,
       triggers: [applyDot({ target: DEBUFF.bleedTick })],
     }),
     hit(2, {
-      frame: 32,
-      physMultiplier: 0.5441,
-      attributeMultiplier: 0.8161,
-      physFixed: 150,
-      attributeFixed: 82,
+      frame: 34,
+      physMultiplier: 0.408051,
+      attributeMultiplier: 0.6120765,
+      physFixed: 112.95,
+      attributeFixed: 61.5,
       triggers: [applyDot({ target: DEBUFF.bleedTick })],
     }),
     hit(3, {
-      frame: 48,
-      physMultiplier: 0.5441,
-      attributeMultiplier: 0.8161,
-      physFixed: 150,
-      attributeFixed: 82,
+      frame: 43,
+      physMultiplier: 0.816102,
+      attributeMultiplier: 1.224153,
+      physFixed: 225.9,
+      attributeFixed: 123,
       triggers: [applyDot({ target: DEBUFF.bleedTick })],
     }),
   ],
   createdAt: "2026-07-19T00:00:00.000Z",
-  updatedAt: "2026-07-19T00:00:00.000Z",
+  updatedAt: "2026-09-09T00:00:00.000Z",
 })

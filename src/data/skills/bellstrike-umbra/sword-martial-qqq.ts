@@ -3,6 +3,7 @@ import { applyDot, detonateDot } from "../../../definitions/skills/triggers"
 import { ATTUNE, CAST, PROP, WEAPON } from "../ids"
 import { BUFF } from "../buffs/ids"
 import { SKILL, DEBUFF } from "./ids"
+import { STRATEGIC_SWORD_RECEIVES } from "./receives"
 
 export const swordMartialQqq = defineSkill({
   id: SKILL.swordMartialQqq,
@@ -15,26 +16,28 @@ export const swordMartialQqq = defineSkill({
   attributeAttack: "Bellstrike",
   castTag: CAST.swordMartialQQQ,
   triggersBuffs: [BUFF.jadeware],
-  castFrames: 55,
+  receives: STRATEGIC_SWORD_RECEIVES,
+  // Cast length to the earliest next input and hit frames: in-game animation, 2026-09-09.
+  castFrames: 86,
   triggerable: true,
   hits: [
     hit(0, {
-      frame: 0,
-      physMultiplier: 0.5441,
-      attributeMultiplier: 0.8161,
-      physFixed: 150,
-      attributeFixed: 82,
+      frame: 32,
+      physMultiplier: 0.316911,
+      attributeMultiplier: 0.475366,
+      physFixed: 0,
+      attributeFixed: 0,
       triggers: [applyDot({ target: DEBUFF.bleedTick }), detonateDot({ target: DEBUFF.bleedTick, stacks: 0 })],
     }),
     hit(1, {
-      frame: 15,
-      physMultiplier: 0.5441,
-      attributeMultiplier: 0.8161,
-      physFixed: 150,
-      attributeFixed: 82,
+      frame: 71,
+      physMultiplier: 0.475366,
+      attributeMultiplier: 0.713049,
+      physFixed: 0,
+      attributeFixed: 0,
       triggers: [applyDot({ target: DEBUFF.bleedTick }), detonateDot({ target: DEBUFF.bleedTick, stacks: 0 })],
     }),
   ],
   createdAt: "2026-07-30T00:00:00.000Z",
-  updatedAt: "2026-07-30T00:00:00.000Z",
+  updatedAt: "2026-09-09T00:00:00.000Z",
 })

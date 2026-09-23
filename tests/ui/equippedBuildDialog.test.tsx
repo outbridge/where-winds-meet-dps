@@ -6,6 +6,8 @@ import { withDerivedStats } from "../../src/engine/derivedInputs"
 import { applyArmorSet, applyBowSet } from "../../src/engine/panel"
 import type { Inputs } from "../../src/engine/types"
 import { getAttunement } from "../../src/engine/attunements"
+import { ODDITY_BOARD, claimedOddityNodes } from "../../src/definitions/baseStats"
+import { classDefinition } from "../../src/definitions/classes/registry"
 import { SET_BY_ID } from "../../src/definitions/sets/registry"
 import { statLineLabel } from "../../src/data/stats/statLines"
 import enCatalogue from "../../src/i18n/locales/en.json"
@@ -21,12 +23,20 @@ vi.mock("../../src/ui/hooks/useGearAnalysis", () => ({
   useGearAnalysis: () => ({ rows: [], isPending: false }),
 }))
 
-const fixture = graduationInputs(defaultInputs)!
+const fixture = graduationInputs({
+  ...defaultInputs,
+  graduationBuildId: classDefinition(defaultInputs.classId)!.graduationBuilds[0].id,
+})!
 
 function renderDialog(inputs: Inputs = fixture, currentDps = 54321.1) {
   render(
     <I18nProvider>
-      <EquippedBuildDialog inputs={inputs} currentDps={currentDps} onClose={() => undefined} />
+      <EquippedBuildDialog
+        inputs={inputs}
+        profile={{ classId: inputs.classId }}
+        currentDps={currentDps}
+        onClose={() => undefined}
+      />
     </I18nProvider>,
   )
 }
@@ -70,8 +80,9 @@ describe("EquippedBuildDialog", () => {
     const armorSet = fixture.set ? SET_BY_ID[fixture.set] : null
     const enabledCount =
       fixture.martialArtsTalents.filter((talent) => talent.enabled).length +
-      Object.values(fixture.oddities).reduce(
-        (total, nodes) => total + nodes.filter((node) => node.enabled).length,
+      ODDITY_BOARD.reduce(
+        (total, region) =>
+          total + claimedOddityNodes(fixture.unclaimedOddityNodes, region.key).length,
         0,
       )
 
@@ -108,7 +119,12 @@ describe("EquippedBuildDialog", () => {
     const onClose = vi.fn()
     render(
       <I18nProvider>
-        <EquippedBuildDialog inputs={fixture} currentDps={54321.1} onClose={onClose} />
+        <EquippedBuildDialog
+          inputs={fixture}
+          profile={{ classId: fixture.classId }}
+          currentDps={54321.1}
+          onClose={onClose}
+        />
       </I18nProvider>,
     )
 
@@ -126,6 +142,7 @@ describe("GearTab build summary button", () => {
           <GearTab
             inputs={fixture}
             engineInputs={fixture}
+            customGraduationBuild={null}
             onChange={() => {}}
             currentDps={54321.1}
           />

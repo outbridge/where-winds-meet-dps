@@ -75,10 +75,7 @@ function buildScenario(withTriggers: boolean) {
   })
 
   const rotation = makeRotation(CLASS, {
-    steps: [
-      makeStep({ skillId: skillApplyB.id, hitCount: 1 }),
-      makeStep({ skillId: skillApplyA.id, hitCount: 1 }),
-    ],
+    steps: [makeStep({ skillId: skillApplyB.id }), makeStep({ skillId: skillApplyA.id })],
   })
 
   return simulateTimeline(timelineInputs(rotation, [skillApplyB, skillApplyA], [debuffA, debuffB]))
@@ -91,11 +88,7 @@ describe("Debuff.triggersBuffs — DoT ticks trigger declared buffs", () => {
     expect(withTriggers.totalDamage).toBeGreaterThan(without.totalDamage)
   })
 
-  // A tick-applied buff reaches later ticks and shows on later cast chips. It
-  // still does NOT reach a later regular hit: the main hit-damage pass runs
-  // before the tick pass, so a regular hit is scored before any tick has
-  // applied anything. Ordering, not scope — the buff is `affectsAll`.
-  it("a tick-triggered buff reaches a later tick and that cast's chips, but not a regular hit already scored", () => {
+  it("a tick-triggered buff reaches a later tick, that cast's chips, and a later regular hit", () => {
     const debuffA = dotDebuff("Debuff A", 60, [BUFF.vulnerabilityTeammate])
     const skillApplyA = makeSkill(CLASS, {
       name: "Apply A",
@@ -110,10 +103,7 @@ describe("Debuff.triggersBuffs — DoT ticks trigger declared buffs", () => {
     const probeHit = makeHit({ frame: 0, physMultiplier: 2, physFixed: 100 })
     const skillProbe = makeSkill(CLASS, { name: "Probe", castFrames: 60, hits: [probeHit] })
     const rotation = makeRotation(CLASS, {
-      steps: [
-        makeStep({ skillId: skillApplyA.id, hitCount: 1 }),
-        makeStep({ skillId: skillProbe.id, hitCount: 1 }),
-      ],
+      steps: [makeStep({ skillId: skillApplyA.id }), makeStep({ skillId: skillProbe.id })],
     })
     const skills = [skillApplyA, skillProbe]
     const inputs = { ...timelineInputs(rotation, skills, [debuffA]), set: null }
@@ -132,7 +122,10 @@ describe("Debuff.triggersBuffs — DoT ticks trigger declared buffs", () => {
       buildContext(inputs),
       1,
     ).expectedDamage
-    expect(r.perSkill.find((s) => s.name === "Probe")!.expectedDamage).toBeCloseTo(
+    expect(r.perSkill.find((s) => s.name === "Probe")!.expectedDamage).toBeGreaterThan(
+      buffLessProbeDamage,
+    )
+    expect(untriggered.perSkill.find((s) => s.name === "Probe")!.expectedDamage).toBeCloseTo(
       buffLessProbeDamage,
       6,
     )

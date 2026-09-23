@@ -19,6 +19,7 @@ import { GithubLink } from "../ui/layout/github-link/GithubLink"
 import { ChangelogButton } from "../ui/layout/changelog-button/ChangelogButton"
 import { LanguageSelect } from "../ui/layout/language-select/LanguageSelect"
 import { RotationTab } from "../ui/features/rotation/rotation-tab/RotationTab"
+import { RotationEditorPanel } from "../ui/features/rotation/rotation-editor-panel/RotationEditorPanel"
 import { SimulationTab } from "../ui/features/simulation/simulation-tab/SimulationTab"
 import { ProfilePanel } from "../ui/features/profile/profile-panel/ProfilePanel"
 import { GearTab } from "../ui/features/gear/gear-tab/GearTab"
@@ -30,7 +31,11 @@ import { SimulationToast, SIMULATION_PATH } from "../ui/layout/simulation-toast/
 import { DpsActivityToast } from "../ui/layout/dps-activity-toast/DpsActivityToast"
 import { GraduationBuildDialog } from "../ui/features/gear/graduation-build-dialog/GraduationBuildDialog"
 import { SetupWizard, type SetupMode } from "../ui/features/setup/setup-wizard/SetupWizard"
+import { BreakthroughDataDialog } from "../ui/layout/breakthrough-data-dialog/BreakthroughDataDialog"
+import { breakthroughDataRequestFor } from "../ui/layout/breakthrough-data-dialog/breakthroughDataRequest"
 import { activeRotationName } from "../ui/features/rotation/rotationOptions"
+import { followedGraduationBuild } from "../engine/graduation"
+import { graduationBuildKey } from "../i18n/contentKeys"
 import { useI18n } from "../i18n/i18nContext"
 import { I18nProvider } from "../i18n/I18nProvider"
 import { ConfirmProvider } from "../ui/components/confirm-dialog/ConfirmDialog"
@@ -42,10 +47,12 @@ import {
   loadCustomSkills,
   loadCustomBuffs,
   loadCustomDebuffs,
+  loadCustomGraduationBuilds,
   migrateSeededSkillIds,
   migrateDotStandinOverrides,
   type ProfilesState,
 } from "../storage"
+import type { CustomGraduationBuild } from "../engine/customGraduationBuild"
 import type { Skill } from "../engine/skill"
 import type { Buff } from "../engine/buff"
 import type { Debuff } from "../engine/debuff"
@@ -99,6 +106,16 @@ function AppInner() {
     initial.firstRun ? { mode: "first-run", defaultName: "" } : null,
   )
 
+  const [breakthroughAskedClassIds, setBreakthroughAskedClassIds] = useState<readonly string[]>([])
+  const breakthroughRequest = useMemo(
+    () => (initial.firstRun ? null : breakthroughDataRequestFor(activeDraft.classId)),
+    [initial.firstRun, activeDraft.classId],
+  )
+  const breakthroughAsk =
+    breakthroughRequest && !breakthroughAskedClassIds.includes(breakthroughRequest.classId)
+      ? breakthroughRequest
+      : null
+
   const draftJson = useMemo(() => JSON.stringify(activeDraft), [activeDraft])
   const isDirty = draftJson !== lastSavedJson
 
@@ -111,10 +128,21 @@ function AppInner() {
 
   const [customBuffs] = useState<Buff[]>(() => loadCustomBuffs())
   const [customDebuffs] = useState<Debuff[]>(() => loadCustomDebuffs())
+  const [customGraduationBuilds, setCustomGraduationBuilds] = useState<CustomGraduationBuild[]>(
+    () => loadCustomGraduationBuilds(),
+  )
+
+  const customGraduationBuild = useMemo(
+    () => customGraduationBuilds.find((build) => build.classId === inputs.classId) ?? null,
+    [customGraduationBuilds, inputs.classId],
+  )
 
   const configuredInputs = useMemo(
-    () => withCustomContent(inputs, customSkills, customBuffs, customDebuffs),
-    [inputs, customSkills, customBuffs, customDebuffs],
+    () => ({
+      ...withCustomContent(inputs, customSkills, customBuffs, customDebuffs),
+      customGraduationBuild,
+    }),
+    [inputs, customSkills, customBuffs, customDebuffs, customGraduationBuild],
   )
 
   const engineInputs = useMemo(() => {
@@ -123,7 +151,9 @@ function AppInner() {
   }, [configuredInputs])
 
   const result = useMemo(() => runEngine(engineInputs), [engineInputs])
-  const graduation = useGraduationRate(configuredInputs, result.dps)
+  const graduation = useGraduationRate(configuredInputs)
+  const followedBuild = followedGraduationBuild(configuredInputs)
+  const mustChooseGraduationBuild = !followedBuild && !wizard && !isSimulationRunning
   const headerResult = useMemo(
     () => ({ ...result, graduationRate: graduation.rate }),
     [result, graduation.rate],
@@ -267,14 +297,15 @@ function AppInner() {
     tabRefs.current[pathname]?.scrollIntoView({ block: "nearest", inline: "nearest" })
   }, [pathname])
 
-  const TABS: { path: string; label: string; align?: "right" }[] = [
+  const TABS: { path: string; label: string; align?: "right"; gapBefore?: true }[] = [
     { path: "/overview", label: t("common.overview") },
     { path: "/gear", label: t("app.gear") },
     { path: "/rotation", label: t("common.rotation") },
+    { path: "/rotation-editor", label: t("rotation.rotationEditor") },
     { path: "/simulation", label: t("app.simulation") },
     { path: "/skills", label: t("app.skillEditor") },
-    { path: "/talents", label: t("common.talentsOddities") },
-    { path: "/profile", label: t("common.profiles"), align: "right" },
+    { path: "/talents", label: t("common.enhancementOdditiesTalents"), align: "right" },
+    { path: "/profile", label: t("common.profiles"), gapBefore: true },
   ]
 
   const saveLabel =
@@ -300,12 +331,23 @@ function AppInner() {
           onCancel={wizard.mode === "new-profile" ? () => setWizard(null) : undefined}
         />
       )}
-      {graduationDialogOpen && (
+      {breakthroughAsk && (
+        <BreakthroughDataDialog
+          request={breakthroughAsk}
+          onClose={() =>
+            setBreakthroughAskedClassIds((asked) => [...asked, breakthroughAsk.classId])
+          }
+        />
+      )}
+      {(graduationDialogOpen || mustChooseGraduationBuild) && (
         <GraduationBuildDialog
           inputs={configuredInputs}
+          currentDps={graduation.currentDps}
           theoreticalDps={graduation.theoreticalDps}
           relayedTheoreticalDps={graduation.relayedTheoreticalDps}
-          onClose={() => setGraduationDialogOpen(false)}
+          onFollowBuild={(graduationBuildId) => setInputs({ ...inputs, graduationBuildId })}
+          onCustomBuildsChanged={setCustomGraduationBuilds}
+          onClose={mustChooseGraduationBuild ? undefined : () => setGraduationDialogOpen(false)}
         />
       )}
       <div className={styles.appHeader}>
@@ -346,6 +388,13 @@ function AppInner() {
           theoreticalDps={graduation.theoreticalDps}
           onGraduationClick={() => setGraduationDialogOpen(true)}
           graduationDisabled={isSimulationRunning}
+          graduationBuildName={
+            followedBuild
+              ? followedBuild.id === customGraduationBuild?.id
+                ? `${t("gear.customGraduationBuild.custom")} - ${followedBuild.name}`
+                : t(graduationBuildKey(followedBuild.id), followedBuild.name)
+              : null
+          }
           rotationName={rotationName}
           onRotationClick={goToRotationTab}
         />
@@ -362,7 +411,8 @@ function AppInner() {
               className={({ isActive }) =>
                 styles.tab +
                 (isActive ? ` ${styles.active}` : "") +
-                (tab.align === "right" ? ` ${styles.tabRight}` : "")
+                (tab.align === "right" ? ` ${styles.tabRight}` : "") +
+                (tab.gapBefore ? ` ${styles.tabGapBefore}` : "")
               }
             >
               {tab.label}
@@ -392,6 +442,7 @@ function AppInner() {
                 <GearTab
                   inputs={inputs}
                   engineInputs={engineInputs}
+                  customGraduationBuild={customGraduationBuild}
                   onChange={setInputs}
                   currentDps={result.dps}
                 />
@@ -407,6 +458,10 @@ function AppInner() {
                   result={result}
                 />
               }
+            />
+            <Route
+              path="/rotation-editor"
+              element={<RotationEditorPanel inputs={inputs} onChange={setInputs} result={result} />}
             />
             <Route
               path="/simulation"

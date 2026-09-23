@@ -2,6 +2,7 @@ import { defineSkill, hit } from "../../../definitions/skills/skillDef"
 import { applyDot, detonateDot } from "../../../definitions/skills/triggers"
 import { CAST, WEAPON } from "../ids"
 import { SKILL, DEBUFF } from "./ids"
+import { STRATEGIC_SWORD_RECEIVES } from "./receives"
 
 export const swordRChargeFollowUp1HitCancel = defineSkill({
   id: SKILL.swordRChargeFollowUp1HitCancel,
@@ -13,13 +14,15 @@ export const swordRChargeFollowUp1HitCancel = defineSkill({
   weaponOrAttribute: "Sword",
   attributeAttack: "Bellstrike",
   castTag: CAST.swordRChargeFollowUp1HitCancel,
-  castFrames: 30,
+  receives: STRATEGIC_SWORD_RECEIVES,
+  // A cancel form ends where the animation opens its interrupt window — 33 frames in (in-game animation, 2026-09-09); the parry that ends it is the next rotation step.
+  castFrames: 33,
   triggerable: true,
   hits: [
     hit(0, {
-      frame: 0,
-      physMultiplier: 0.40665,
-      attributeMultiplier: 0.609975,
+      frame: 14,
+      physMultiplier: 0.325601,
+      attributeMultiplier: 0.488401,
       physFixed: 0,
       attributeFixed: 0,
       triggers: [
@@ -32,5 +35,5 @@ export const swordRChargeFollowUp1HitCancel = defineSkill({
     }),
   ],
   createdAt: "2026-07-30T00:00:00.000Z",
-  updatedAt: "2026-07-30T00:00:00.000Z",
+  updatedAt: "2026-09-09T00:00:00.000Z",
 })

@@ -7,9 +7,14 @@ export const SKILL = {
   spearq: "bellstrikeUmbra-spearq",
   swordspecial3Hit: "bellstrikeUmbra-swordspecial-3-hit",
   crosswindBlade: "bellstrikeUmbra-crosswind-blade",
+  crosswindBladeCancel: "bellstrikeUmbra-crosswind-blade-cancel",
   spearheavy1HitPrepull: "bellstrikeUmbra-spearheavy-1-hit-prepull",
   spearq5HitCancel: "bellstrikeUmbra-spearq-5-hit-cancel",
   swordspecial4Hit: "bellstrikeUmbra-swordspecial-4-hit",
+  swordspecial1Hit: "bellstrikeUmbra-swordspecial-1-hit",
+  swordspecial2Hit: "bellstrikeUmbra-swordspecial-2-hit",
+  swordChargeStage11Hit: "bellstrikeUmbra-sword-charge-stage-1-1-hit",
+  swordChargeStage12Hit: "bellstrikeUmbra-sword-charge-stage-1-2-hit",
   swordChargeStage14Hit: "bellstrikeUmbra-sword-charge-stage-1-4-hit",
   swordqFollowUp1HitCancel: "bellstrikeUmbra-swordq-follow-up-1-hit-cancel",
   swordqFollowUp2HitCancel: "bellstrikeUmbra-swordq-follow-up-2-hit-cancel",
@@ -23,25 +28,10 @@ export const SKILL = {
   spearspecial: "bellstrikeUmbra-spearspecial",
   bleedTick: "bellstrikeUmbra-bleed-tick",
   bleedDetonation: "bellstrikeUmbra-bleed-detonation",
-  dragonFireSmolder1Hit: "bellstrikeUmbra-dragon-fire-smolder-1-hit",
-  dragonFireSmolder2Hits: "bellstrikeUmbra-dragon-fire-smolder-2-hits",
 } as const
 
 export const DEBUFF = {
-  toadPoison: "debuff-bellstrikeUmbra-toad-poison",
-  combustion: "debuff-bellstrikeUmbra-combustion",
-  darkFire: "debuff-bellstrikeUmbra-dark-fire",
-  fluteRipple: "debuff-bellstrikeUmbra-flute-ripple",
   bleedTick: "debuff-bellstrikeUmbra-bleed-tick",
   bitterSeasonTick: "debuff-bellstrikeUmbra-bitter-season-tick",
   defenseDown: "debuff-bellstrikeUmbra-defense-down",
-} as const
-
-// The two gate buffs `classes/bellstrike-umbra/gates.ts` registers — consumed by the
-// timeline (`HitVariant` swaps, trigger conditions), never carrying stat
-// effects of their own. Sword Horizon's two Zenith gates are declared by
-// `data/innerWays/swordHorizonZenith.ts` instead.
-export const STATUS = {
-  riverFlow: "buff-bellstrikeUmbra-river-flow",
-  spearSpecialCooldown: "buff-bellstrikeUmbra-spear-special-cooldown",
 } as const

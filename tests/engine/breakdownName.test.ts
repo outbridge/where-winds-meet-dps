@@ -17,9 +17,10 @@ function castAll(skills: Skill[], debuffs: Debuff[] = []): Inputs {
     customSkills: skills,
     customDebuffs: debuffs,
     activeCustomRotation: makeRotation(CLASS, {
-      steps: skills.map((skill) => makeStep({ skillId: skill.id, hitCount: 1 })),
+      steps: skills.map((skill) => makeStep({ skillId: skill.id })),
     }),
     set: null,
+    divinecraft: null,
   }
 }
 

@@ -1,5 +1,5 @@
 import { PARAM } from "../../data/skills/buffs/ids"
-import type { InnerWayNode } from "../../data/innerWays/ids"
+import type { InnerWayLadderId, InnerWayNode } from "../../data/innerWays/ids"
 import type { PanelStatPath } from "../../engine/gearStats"
 import type { MechanicRegistration } from "../../engine/mechanics"
 import type { Buff } from "../../engine/buff"
@@ -7,10 +7,11 @@ import type { BuffModule } from "../../engine/buffs/buffModule"
 import type { DisplayGateRegistration } from "../../engine/buffs/displayGates"
 import type { SkillBehaviorRegistration } from "../../engine/behavior"
 
-type PanelStats = Readonly<Partial<Record<PanelStatPath, number>>>
+export type PanelStats = Readonly<Partial<Record<PanelStatPath, number>>>
 
 export interface InnerWayTier {
   panelStats?: PanelStats
+  ladder?: InnerWayLadderId
   nodes?: readonly InnerWayNode[]
 }
 
@@ -21,10 +22,6 @@ export interface InnerWayScalars {
   minTier?: number
   generalDamageBoost?: number
   chargeBonus?: number
-  // Superseded by a mechanic's `dotDamageMultiplier` when one is passed.
-  dotDamageBoost?: number
-  // The site's `Ss[key].allDamageBonus`, `zo()` ~L7743-65.
-  allDamageBonus?: number
   targetDefenseMultiplier?: number
 }
 
@@ -45,6 +42,8 @@ export interface InnerWayDef {
   // rename migrations, covering the two paths that never walk the chain.
   legacyNames?: readonly string[]
   selectableTiers: readonly number[]
+  // As-of marker for the in-game "Based on Breakthrough" stat increases.
+  confirmedBreakthrough: number
   // The reference site's param this inner way turns on when selected —
   // undefined for one that is deliberately never mapped (see
   // `insightfulStrike.ts`).
@@ -59,6 +58,9 @@ export interface InnerWayDef {
   // Folded into every slotting class by the class registry; the two below
   // register directly instead — CLASSES.md § "One definition per class".
   gateBuffs?: readonly InnerWayGateBuff[]
+  // Authored, never derived from `maxStacks`: a gate buff is pre-settable only
+  // once something actually seeds a simulation from its opening count.
+  openingStackBuffIds?: readonly string[]
   buffDefs?: readonly BuffModule[]
   displayGates?: readonly DisplayGateRegistration[]
   skillBehaviors?: readonly SkillBehaviorRegistration[]

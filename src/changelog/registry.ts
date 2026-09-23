@@ -2,6 +2,54 @@ import type { ChangelogEntry } from "./types"
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: "0.7.3",
+    date: "2026-09-21",
+    headline: "Talent and oddity boards, and a standardized rate",
+    loadDetails: () => import("./entries/v0-7-3").then((module) => module.details),
+  },
+  {
+    version: "0.7.2",
+    date: "2026-09-16",
+    headline: "Graduation builds you follow, heirloom gear and Blossoms",
+    loadDetails: () => import("./entries/v0-7-2").then((module) => module.details),
+  },
+  {
+    version: "0.7.1",
+    date: "2026-09-11",
+    headline: "Retune draw chances for Bamboocut and the first line",
+    loadDetails: () => import("./entries/v0-7-1").then((module) => module.details),
+  },
+  {
+    version: "0.7.0",
+    date: "2026-09-11",
+    headline: "Bamboocut Draught, a Runs panel and Fire Oil's Burn",
+    loadDetails: () => import("./entries/v0-7-0").then((module) => module.details),
+  },
+  {
+    version: "0.6.1",
+    date: "2026-09-09",
+    headline: "Bellstrike Umbra timings, mystic art ranks and gear pools",
+    loadDetails: () => import("./entries/v0-6-1").then((module) => module.details),
+  },
+  {
+    version: "0.6.0",
+    date: "2026-09-08",
+    headline: "Arsenal and Talent Points tabs, and complete Max HP",
+    loadDetails: () => import("./entries/v0-6-0").then((module) => module.details),
+  },
+  {
+    version: "0.5.1",
+    date: "2026-09-03",
+    headline: "Editable enhancements, and breakthrough 17 figures",
+    loadDetails: () => import("./entries/v0-5-1").then((module) => module.details),
+  },
+  {
+    version: "0.5.0",
+    date: "2026-09-02",
+    headline: "Rotations carry their Qi break and Zenith opener",
+    loadDetails: () => import("./entries/v0-5-0").then((module) => module.details),
+  },
+  {
     version: "0.4.2",
     date: "2026-08-29",
     headline: "Truer Full Potential figures on gear tiles",

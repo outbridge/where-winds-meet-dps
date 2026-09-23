@@ -1,4 +1,5 @@
 import type { GearWordId } from "../data/stats/statLines"
+import type { CustomGraduationBuild } from "./customGraduationBuild"
 import type { Rotation } from "./rotation"
 
 export type { GearWordId } from "../data/stats/statLines"
@@ -6,6 +7,7 @@ import type { HitOutcome } from "./formula"
 import type { Skill } from "./skill"
 import type { Buff, BuffStatEffect } from "./buff"
 import type { Debuff } from "./debuff"
+import type { Effect } from "./effects/effect"
 
 export const ATTRIBUTE_KEYS = ["Bellstrike", "Stonesplit", "Silkbind", "Bamboocut"] as const
 
@@ -20,6 +22,7 @@ export const WEAPON_NAMES = [
   "Twin Blades",
   "Rope Dart",
   "Hengdao",
+  "Gauntlets",
 ] as const
 
 export type WeaponName = (typeof WEAPON_NAMES)[number]
@@ -30,7 +33,12 @@ export function isWeaponName(value: string): value is WeaponName {
 
 export type BowSet = "affinity" | "crit" | "precision" | null
 
+export type ScriptId = "wraithstrikeScript" | "voidrotScript"
+
 export type Arsenal = "general" | "bellstrike" | "stonesplit" | "silkbind" | "bamboocut"
+
+// Keyed by store number (1-10).
+export type ArsenalScores = Record<number, number>
 
 export interface AttackBlock {
   min: number
@@ -38,23 +46,24 @@ export interface AttackBlock {
   penetration: number
 }
 
-export interface QiBreakSettings {
-  enabled: boolean
+export interface QiBreakWindow {
   startSec: number
+  /** A window of zero length leaves the pull with no exhausted phase at all. */
   durationSec: number
   lowQiLeadSec: number
 }
 
 // Deliberately NOT settings here, because each already has exactly one home and
 // a second would double-count it: Fire Oil is the Divinecraft fire choice
-// (`Inputs.tianGongElement`), Vulnerability is the tank spear debuff
+// (`Inputs.divinecraft`), Vulnerability is the tank spear debuff
 // (`Inputs.shareEasyHurt`), and Formbend has no modeled effect at all.
 export interface CombatSettings {
-  qiBreak: QiBreakSettings
+  /** `null` leaves each rotation running the break window it carries itself. */
+  qiBreakOverride: QiBreakWindow | null
   dragonsBreath: boolean
   healerBuff: boolean
   breakExtension: boolean
-  revelryScript: boolean
+  script: ScriptId | null
   dragonHeadFullStacks: boolean
   dragonHeadLowHpMaxBonus: boolean
   lowEndurance: boolean
@@ -62,11 +71,11 @@ export interface CombatSettings {
 
 export function defaultCombatSettings(): CombatSettings {
   return {
-    qiBreak: { enabled: true, startSec: 25, durationSec: 10, lowQiLeadSec: 5 },
+    qiBreakOverride: null,
     dragonsBreath: false,
     healerBuff: false,
     breakExtension: false,
-    revelryScript: false,
+    script: null,
     dragonHeadFullStacks: false,
     dragonHeadLowHpMaxBonus: false,
     lowEndurance: false,
@@ -76,8 +85,10 @@ export function defaultCombatSettings(): CombatSettings {
 // Numbers are stored as fractions where the panel shows percentages
 // (29.2 % → 0.292).
 export interface Inputs {
+  resourceSettings?: Record<string, import("../definitions/resources/resourceDef").ResourceSettings>
   classId: string
   breakthrough: number
+  followedBreakthroughRelease?: number
 
   phys: AttackBlock
   bellstrike: AttackBlock
@@ -97,6 +108,7 @@ export interface Inputs {
   sustainDamageBoost: number
   // Injected at the engine boundary, not persisted.
   allDamageBoost?: number
+  independentDamageBoost?: number
 
   allMartialBoost: number
   swordBoost: number
@@ -107,6 +119,7 @@ export interface Inputs {
   dualKnivesBoost: number
   ropeDartBoost: number
   hengDaoBoost: number
+  gauntletsBoost: number
 
   bossBoost: number
   singleMysticBoost: number
@@ -117,7 +130,7 @@ export interface Inputs {
   mindMethods: [MindMethodSlot, MindMethodSlot, MindMethodSlot, MindMethodSlot]
 
   food: boolean
-  tianGongElement: "fire" | "poison" | null
+  divinecraft: "fire" | "poison" | null
   // A `SET_ID` value, never the display name.
   set: string | null
   shareDebuff5HenZhi: boolean
@@ -125,15 +138,19 @@ export interface Inputs {
 
   bowSet: BowSet
   arsenal: Arsenal
+  arsenalScores: ArsenalScores
   dummyMode: boolean
 
   rotation: string | null
 
   selectedBuiltinRotationId?: string | null
 
+  graduationBuildId?: string | null
+
   // Injected at the engine boundary, not persisted on the profile blob — the
   // engine never reads storage, so locked fixtures stay byte-exact.
   activeCustomRotation?: Rotation | null
+  customGraduationBuild?: CustomGraduationBuild | null
   customSkills?: Skill[] | null
   customBuffs?: Buff[] | null
   customDebuffs?: Debuff[] | null
@@ -147,7 +164,11 @@ export interface Inputs {
 
   martialArtsTalents: MartialArtsTalent[]
 
-  oddities: OddityRegions
+  unclaimedOddityNodes: UnclaimedOddityNodes
+
+  disabledTalentNodes: DisabledTalentNodes
+
+  enhancements: EnhancementLevels
 }
 
 export type TalentStat =
@@ -172,6 +193,8 @@ export type TalentStat =
   | "critDamage"
   | "affinityDamage"
   | "attributeDamage"
+  | "maxHp"
+  | "physDef"
 
 export type AttributeName = "power" | "agility" | "momentum"
 
@@ -203,15 +226,9 @@ export interface MartialArtsTalent {
   scaleMax: number
 }
 
-export interface OddityNode {
-  id: number
-  stat: TalentStat
-  value: number
-  enabled: boolean
-  icon?: string
-}
+export type UnclaimedOddityNodes = Record<string, readonly number[]>
 
-export type OddityRegions = Record<string, OddityNode[]>
+export type DisabledTalentNodes = readonly number[]
 
 export type GearSlot =
   "leftWeapon" | "rightWeapon" | "disc" | "pendant" | "helm" | "armor" | "greaves" | "bracer"
@@ -233,7 +250,15 @@ export function isWeaponSlot(slot: GearSlot): boolean {
   return WEAPON_SLOTS.includes(slot)
 }
 
-export type GearLevel = 86 | 91 | 96
+export type EnhancementStat = "minPhys" | "maxPhys" | "maxHp" | "physDef"
+
+export type EnhancementLevels = Record<GearSlot, number>
+
+export const GEAR_LEVELS = [86, 91, 96, 100, 105] as const
+export type GearLevel = (typeof GEAR_LEVELS)[number]
+
+export type GearLevelValues = Partial<Record<GearLevel, number>>
+
 export const GEAR_RARITIES = ["legendary", "epic"] as const
 export type GearRarity = (typeof GEAR_RARITIES)[number]
 
@@ -259,6 +284,9 @@ export interface GearPiece {
   isNew?: boolean
   label?: string
   note?: string
+  // The retune direction is locked for the life of the item, so this history
+  // belongs to the piece rather than to any one word slot.
+  retunedOutWords?: readonly GearWordId[]
 }
 
 export type EquippedSlots = Record<GearSlot, string | null>
@@ -304,9 +332,11 @@ export interface EngineRunOptions {
 }
 
 export interface Result {
+  resources?: import("./resources").ResourceResult[]
   dps: number
   totalDamage: number
   rotationDuration: number
+  castDuration: number
   graduationRate: number | null
   perSkill: SkillTickResult[]
   ranking: ItemRankingRow[]
@@ -319,6 +349,7 @@ export interface Result {
   // Optional so `JSON.stringify` drops the keys on an unseeded run and the
   // locked baseline digest stays byte-identical.
   outcomeCounts?: OutcomeCounts
+  outcomeDamage?: OutcomeCounts
   expectedOutcomeShare?: OutcomeCounts
 }
 
@@ -328,6 +359,7 @@ export interface CastBuffTag {
   stacks: number
   maxStacks: number
   effects: BuffStatEffect[]
+  extras?: Effect[]
   dotIntervalSec?: number
   requires?: string
   description?: string

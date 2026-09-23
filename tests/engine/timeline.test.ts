@@ -69,16 +69,16 @@ describe("timeline — computed duration", () => {
     const pre = makeSkill(CLASS, { name: "Pre Prepull", castFrames: 90, hits: [makeHit()] })
     const rotation = makeRotation(CLASS, {
       steps: [
-        makeStep({ skillId: pre.id, hitCount: 1 }),
-        makeStep({ skillId: a.id, hitCount: 1 }),
-        makeStep({ skillId: b.id, hitCount: 1 }),
+        makeStep({ skillId: pre.id }),
+        makeStep({ skillId: a.id }),
+        makeStep({ skillId: b.id }),
       ],
     })
     const r = simulateTimeline(timelineInputs(rotation, [a, b, pre], []))
     expect(r.rotationDuration).toBeCloseTo((120 + 60) / FPS, 10)
   })
 
-  it("a pre-pull cast's damage counts toward the total its frames are excluded from", () => {
+  it("a pre-pull cast with real coefficients lands neither damage nor a breakdown row", () => {
     const pre = makeSkill(CLASS, {
       name: "Pre Prepull",
       castFrames: 90,
@@ -89,17 +89,18 @@ describe("timeline — computed duration", () => {
       castFrames: 60,
       hits: [makeHit({ frame: 0, physMultiplier: 2, physFixed: 50 })],
     })
-    const rotation = makeRotation(CLASS, {
-      steps: [
-        makeStep({ skillId: pre.id, hitCount: 1 }),
-        makeStep({ skillId: main.id, hitCount: 1 }),
-      ],
+    const withPrePull = makeRotation(CLASS, {
+      steps: [makeStep({ skillId: pre.id }), makeStep({ skillId: main.id })],
     })
-    const r = simulateTimeline(timelineInputs(rotation, [pre, main], []))
+    const mainOnly = makeRotation(CLASS, {
+      steps: [makeStep({ skillId: main.id })],
+    })
+    const r = simulateTimeline(timelineInputs(withPrePull, [pre, main], []))
+    const baseline = simulateTimeline(timelineInputs(mainOnly, [main], []))
 
-    const prePullRow = r.perSkill.find((s) => s.name === "Pre Prepull")!
-    expect(prePullRow.castCount).toBe(1)
-    expect(prePullRow.expectedDamage).toBeGreaterThan(0)
+    expect(r.perSkill.find((s) => s.name === "Pre Prepull")).toBeUndefined()
+    expect((r.timeline ?? []).some((e) => e.skillName === "Pre Prepull" && e.frame < 0)).toBe(true)
+    expect(r.totalDamage).toBe(baseline.totalDamage)
     expect(r.rotationDuration).toBeCloseTo(60 / FPS, 10)
   })
 
@@ -115,28 +116,17 @@ describe("timeline — no-buff parity with the formula kernel", () => {
   it("a single buff-less hit deals exactly computeSkillDamage(hitToArtRow(...))", () => {
     const hit = makeHit({ frame: 0, physMultiplier: 2, physFixed: 50 })
     const skill = makeSkill(CLASS, { name: "Solo", castFrames: 60, hits: [hit] })
-    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: skill.id, hitCount: 1 })] })
+    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: skill.id })] })
     // set: null — the default build's Hawkwing 4-piece is a rotation-wide
     // time-averaged proc a bare buildContext() call can't reproduce.
-    const inputs = { ...timelineInputs(rotation, [skill], []), set: null }
+    // divinecraft: null — the default Fire Oil's Burn ticks on its own
+    // schedule, independent of this one hit.
+    const inputs = { ...timelineInputs(rotation, [skill], []), set: null, divinecraft: null }
     const r = simulateTimeline(inputs)
 
     const ctx = buildContext(inputs)
     const expected = computeSkillDamage(hitToArtRow(hit, skill), ctx, 1).expectedDamage
     expect(r.totalDamage).toBeCloseTo(expected, 6)
-  })
-})
-
-describe("timeline — hit-count selection", () => {
-  it("performing 3 of 5 hits schedules exactly 3 hit events", () => {
-    const hits = [0, 10, 20, 30, 40].map((frame) =>
-      makeHit({ frame, physMultiplier: 1, physFixed: 10 }),
-    )
-    const skill = makeSkill(CLASS, { name: "FiveHits", castFrames: 60, hits })
-    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: skill.id, hitCount: 3 })] })
-    const r = simulateTimeline(timelineInputs(rotation, [skill], []))
-    const row = r.perSkill.find((s) => s.name === "FiveHits")
-    expect(row?.count).toBe(3)
   })
 })
 
@@ -153,7 +143,7 @@ describe("timeline — invariants", () => {
       hits: [makeHit({ physMultiplier: 2, physFixed: 50 })],
     })
     const rotation = makeRotation(CLASS, {
-      steps: [makeStep({ skillId: a.id, hitCount: 1 }), makeStep({ skillId: b.id, hitCount: 1 })],
+      steps: [makeStep({ skillId: a.id }), makeStep({ skillId: b.id })],
     })
     const r = simulateTimeline(timelineInputs(rotation, [a, b], []))
     const sum = r.perSkill.reduce((s, p) => s + p.expectedDamage, 0)
@@ -197,7 +187,7 @@ function makeSwordQQ(bleedId: string): Skill {
 function runBleedScenario(scaling: StackScaling, maxStacks: number): number {
   const bleed = makeBleed({ stackScaling: scaling, maxStacks })
   const sword = makeSwordQQ(bleed.id)
-  const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id, hitCount: 5 })] })
+  const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id })] })
   return simulateTimeline(timelineInputs(rotation, [sword], [], [bleed])).totalDamage
 }
 
@@ -216,7 +206,7 @@ describe("timeline — stack application + per-stack DoT scaling", () => {
   })
 })
 
-function buildBloodBurstScenario(sworHitCount: number) {
+function buildBloodBurstScenario(swordHitCount: number) {
   const bleed = makeBleed({ stackScaling: "flat", maxStacks: 10, dot: null })
   const bloodBurst = makeSkill(CLASS, {
     name: "Blood Burst",
@@ -239,12 +229,9 @@ function buildBloodBurstScenario(sworHitCount: number) {
       }),
     ],
   })
-  const sword = makeSwordQQ(bleed.id)
+  const sword = makeSwordQQN(bleed.id, swordHitCount)
   const rotation = makeRotation(CLASS, {
-    steps: [
-      makeStep({ skillId: sword.id, hitCount: sworHitCount }),
-      makeStep({ skillId: special.id, hitCount: 1 }),
-    ],
+    steps: [makeStep({ skillId: sword.id }), makeStep({ skillId: special.id })],
   })
   return simulateTimeline(timelineInputs(rotation, [sword, special, bloodBurst], [], [bleed]))
 }
@@ -272,7 +259,7 @@ describe("timeline — runaway trigger-chain guard", () => {
         { ...loop.hits[0], triggers: [makeTrigger({ kind: "castSkill", targetId: loop.id })] },
       ],
     }
-    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: loop.id, hitCount: 1 })] })
+    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: loop.id })] })
     const r = simulateTimeline(timelineInputs(rotation, [loop], []))
     expect(r.warnings.some((w) => w.toLowerCase().includes("event"))).toBe(true)
   }, 10_000)
@@ -297,7 +284,7 @@ describe("timeline — triggerable is an authoring filter only", () => {
       ],
     })
     const rotation = makeRotation(CLASS, {
-      steps: [makeStep({ skillId: special.id, hitCount: 1 })],
+      steps: [makeStep({ skillId: special.id })],
     })
     const r = simulateTimeline(timelineInputs(rotation, [special, bloodBurst], []))
     const row = r.perSkill.find((s) => s.name === "Blood Burst NT")
@@ -356,7 +343,6 @@ function expectedRowDamage(inputs: Inputs, row: DotStackShape, buffName: string)
     attributeAttack: undefined,
     skillType: "sustain",
     specialTag: "sustain",
-    elevatedAttributeMultiplier: false,
   } as Parameters<typeof computeSkillDamage>[0]
   return computeSkillDamage(art, ctx, 1).expectedDamage
 }
@@ -365,7 +351,7 @@ describe("timeline — per-stack DoT damage table", () => {
   it("a tick at N live stacks uses perStackShapes[N-1], not baseShape × N", () => {
     const bleed = makeBleedTable(5, 5)
     const sword = makeSwordQQN(bleed.id, 3)
-    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id, hitCount: 3 })] })
+    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id })] })
     const inputs = { ...timelineInputs(rotation, [sword], [], [bleed]), set: null }
     const r = simulateTimeline(inputs)
     const dotRow = r.perSkill.find((s) => s.name.includes("BleedTable"))
@@ -378,7 +364,7 @@ describe("timeline — per-stack DoT damage table", () => {
   it("clamps to the table's last row when live stacks exceed the table length", () => {
     const bleed = makeBleedTable(10, 5)
     const sword = makeSwordQQN(bleed.id, 8)
-    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id, hitCount: 8 })] })
+    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id })] })
     const inputs = { ...timelineInputs(rotation, [sword], [], [bleed]), set: null }
     const r = simulateTimeline(inputs)
     const dotRow = r.perSkill.find((s) => s.name.includes("BleedTable"))
@@ -390,7 +376,7 @@ describe("timeline — per-stack DoT damage table", () => {
   it("uses the first row at 1 stack", () => {
     const bleed = makeBleedTable(5, 5)
     const sword = makeSwordQQN(bleed.id, 1)
-    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id, hitCount: 1 })] })
+    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id })] })
     const inputs = { ...timelineInputs(rotation, [sword], [], [bleed]), set: null }
     const r = simulateTimeline(inputs)
     const dotRow = r.perSkill.find((s) => s.name.includes("BleedTable"))
@@ -416,7 +402,7 @@ describe("timeline — per-stack DoT damage table", () => {
       },
     })
     const sword = makeSwordQQ(bleedExplicitNull.id)
-    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id, hitCount: 5 })] })
+    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: sword.id })] })
     const total = simulateTimeline(
       timelineInputs(rotation, [sword], [], [bleedExplicitNull]),
     ).totalDamage
@@ -475,7 +461,7 @@ describe("timeline — applyDot / detonateDot (logic-free DoT trigger kinds)", (
     const bleed = makeDetonatingBleed({ detonation: { skillId: burst.id } })
     const detonator5 = makeApplyAndDetonate(bleed.id, 5)
     const rotation5 = makeRotation(CLASS, {
-      steps: [makeStep({ skillId: detonator5.id, hitCount: 5 })],
+      steps: [makeStep({ skillId: detonator5.id })],
     })
     const r5 = simulateTimeline(timelineInputs(rotation5, [detonator5, burst], [], [bleed]))
     const burstRow5 = r5.perSkill.find((s) => s.name === "Bleed Burst")
@@ -484,7 +470,7 @@ describe("timeline — applyDot / detonateDot (logic-free DoT trigger kinds)", (
 
     const detonator3 = makeApplyAndDetonate(bleed.id, 3)
     const rotation3 = makeRotation(CLASS, {
-      steps: [makeStep({ skillId: detonator3.id, hitCount: 3 })],
+      steps: [makeStep({ skillId: detonator3.id })],
     })
     const r3 = simulateTimeline(timelineInputs(rotation3, [detonator3, burst], [], [bleed]))
     expect(r3.perSkill.find((s) => s.name === "Bleed Burst")).toBeUndefined()
@@ -496,10 +482,7 @@ describe("timeline — applyDot / detonateDot (logic-free DoT trigger kinds)", (
     const applyOnly = makeApplyOnly(bleed.id, 5)
     const detonator = makeApplyAndDetonate(bleed.id, 1)
     const rotation = makeRotation(CLASS, {
-      steps: [
-        makeStep({ skillId: applyOnly.id, hitCount: 5 }),
-        makeStep({ skillId: detonator.id, hitCount: 1 }),
-      ],
+      steps: [makeStep({ skillId: applyOnly.id }), makeStep({ skillId: detonator.id })],
     })
     const r = simulateTimeline(timelineInputs(rotation, [applyOnly, detonator, burst], [], [bleed]))
     const burstRow = r.perSkill.find((s) => s.name === "Bleed Burst")
@@ -512,7 +495,7 @@ describe("timeline — applyDot / detonateDot (logic-free DoT trigger kinds)", (
     const bleed = makeDetonatingBleed({ detonation: { skillId: burst.id } })
     const applyOnly = makeApplyOnly(bleed.id, 6)
     const rotation = makeRotation(CLASS, {
-      steps: [makeStep({ skillId: applyOnly.id, hitCount: 6 })],
+      steps: [makeStep({ skillId: applyOnly.id })],
     })
     const r = simulateTimeline(timelineInputs(rotation, [applyOnly], [], [bleed]))
     expect(r.perSkill.find((s) => s.name === "Bleed Burst")).toBeUndefined()
@@ -532,9 +515,9 @@ describe("timeline — applyDot / detonateDot (logic-free DoT trigger kinds)", (
     const detonator = makeApplyAndDetonate(bleed.id, 3)
     const rotation = makeRotation(CLASS, {
       steps: [
-        makeStep({ skillId: detonator.id, hitCount: 3 }),
-        makeStep({ skillId: detonator.id, hitCount: 3 }),
-        makeStep({ skillId: detonator.id, hitCount: 3 }),
+        makeStep({ skillId: detonator.id }),
+        makeStep({ skillId: detonator.id }),
+        makeStep({ skillId: detonator.id }),
       ],
     })
     const base = timelineInputs(rotation, [detonator, burst], [], [bleed])
@@ -607,10 +590,7 @@ describe("timeline — combined buff + debuff rotation", () => {
       hits: [makeHit({ frame: 0, physMultiplier: 1, physFixed: 1000 })],
     })
     const rotation = makeRotation(CLASS, {
-      steps: [
-        makeStep({ skillId: setup.id, hitCount: 1 }),
-        makeStep({ skillId: attack.id, hitCount: 1 }),
-      ],
+      steps: [makeStep({ skillId: setup.id }), makeStep({ skillId: attack.id })],
     })
     const withBoth = simulateTimeline(timelineInputs(rotation, [setup, attack], [warcry], [vuln]))
     const withNeither = simulateTimeline(timelineInputs(rotation, [setup, attack], [], []))
@@ -622,6 +602,43 @@ describe("timeline — combined buff + debuff rotation", () => {
     expect(withBoth.perSkill.find((s) => s.name.includes("Vuln"))?.expectedDamage).toBeGreaterThan(
       0,
     )
+  })
+})
+
+describe("timeline — dummy mode keeps the debuffs the player applies", () => {
+  it("drops the target's own vulnerability but still counts a target.generalDamageTaken debuff", () => {
+    const vuln = makeDebuff(CLASS, {
+      name: "Vuln",
+      activation: "triggered",
+      durationFrames: 600,
+      effects: [{ statKey: "target.generalDamageTaken", amount: 0.2 }],
+    })
+    const setup = makeSkill(CLASS, {
+      name: "Setup",
+      castFrames: 30,
+      hits: [
+        makeHit({
+          frame: 0,
+          triggers: [makeTrigger({ kind: "applyDebuff", targetId: vuln.id, stacks: 1 })],
+        }),
+      ],
+    })
+    const attack = makeSkill(CLASS, {
+      name: "Attack",
+      castFrames: 300,
+      hits: [makeHit({ frame: 0, physMultiplier: 1, physFixed: 1000 })],
+    })
+    const rotation = makeRotation(CLASS, {
+      steps: [makeStep({ skillId: setup.id }), makeStep({ skillId: attack.id })],
+    })
+    const run = (dummyMode: boolean, debuffs: Debuff[]) =>
+      simulateTimeline({
+        ...timelineInputs(rotation, [setup, attack], [], debuffs),
+        dummyMode,
+      }).totalDamage
+
+    expect(run(true, [])).toBeLessThan(run(false, []))
+    expect(run(true, [vuln])).toBeGreaterThan(run(true, []))
   })
 })
 
@@ -664,7 +681,7 @@ describe("timeline — a hit landing on the rotation's closing frame", () => {
 
   it("counts toward damage and produces a perSkill row when it is the final cast", () => {
     const skill = lastFrameHitSkill(40)
-    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: skill.id, hitCount: 1 })] })
+    const rotation = makeRotation(CLASS, { steps: [makeStep({ skillId: skill.id })] })
     const r = simulateTimeline(timelineInputs(rotation, [skill], []))
 
     const ev = r.timeline!.find((e) => e.kind === "hit" && e.skillName === "ClosingFrameHit")
@@ -687,7 +704,7 @@ describe("timeline — a hit landing on the rotation's closing frame", () => {
     })
     const alone = simulateTimeline(
       timelineInputs(
-        makeRotation(CLASS, { steps: [makeStep({ skillId: skill.id, hitCount: 1 })] }),
+        makeRotation(CLASS, { steps: [makeStep({ skillId: skill.id })] }),
         [skill],
         [],
       ),
@@ -695,10 +712,7 @@ describe("timeline — a hit landing on the rotation's closing frame", () => {
     const followed = simulateTimeline(
       timelineInputs(
         makeRotation(CLASS, {
-          steps: [
-            makeStep({ skillId: skill.id, hitCount: 1 }),
-            makeStep({ skillId: filler.id, hitCount: 1 }),
-          ],
+          steps: [makeStep({ skillId: skill.id }), makeStep({ skillId: filler.id })],
         }),
         [skill, filler],
         [],
@@ -730,10 +744,7 @@ describe("timeline — cast chips sample once the cast has fully resolved", () =
       hits: [makeHit({ frame: 0 })],
     })
     const rotation = makeRotation(CLASS, {
-      steps: [
-        makeStep({ skillId: skill.id, hitCount: 1 }),
-        makeStep({ skillId: after.id, hitCount: 1 }),
-      ],
+      steps: [makeStep({ skillId: skill.id }), makeStep({ skillId: after.id })],
     })
     const r = simulateTimeline(timelineInputs(rotation, [skill, after], [buff]))
 
@@ -765,9 +776,9 @@ describe("timeline — cast chips sample once the cast has fully resolved", () =
     })
     const rotation = makeRotation(CLASS, {
       steps: [
-        makeStep({ skillId: opener.id, hitCount: 1 }),
-        makeStep({ skillId: silent.id, hitCount: 1 }),
-        makeStep({ skillId: opener.id, hitCount: 1 }),
+        makeStep({ skillId: opener.id }),
+        makeStep({ skillId: silent.id }),
+        makeStep({ skillId: opener.id }),
       ],
     })
     const r = simulateTimeline(timelineInputs(rotation, [opener, silent], [buff]))
@@ -776,5 +787,50 @@ describe("timeline — cast chips sample once the cast has fully resolved", () =
     const lastCast = r.casts![r.casts!.length - 1]
     expect(silentCast.buffs.find((b) => b.name === "Marker")!.stacks).toBe(1)
     expect(lastCast.buffs.find((b) => b.name === "Marker")!.stacks).toBe(2)
+  })
+})
+
+describe("timeline — a hit that carries no coefficient", () => {
+  it("still fires its trigger, and is left out of the breakdown's hit count", () => {
+    const debuff = makeDebuff(CLASS, {
+      name: "Mark",
+      durationFrames: 300,
+      dot: {
+        tickIntervalFrames: 60,
+        physMultiplier: 1,
+        physFixed: 0,
+        attributeMultiplier: 0,
+        attributeFixed: 0,
+        attributeAttack: "",
+        skillType: "sustain",
+        count: 1,
+      },
+    })
+    const opener = makeSkill(CLASS, {
+      name: "Silent Opener",
+      castFrames: 60,
+      hits: [
+        makeHit({
+          frame: 0,
+          physMultiplier: 0,
+          attributeMultiplier: 0,
+          physFixed: 0,
+          attributeFixed: 0,
+          triggers: [makeTrigger({ kind: "applyDebuff", targetId: debuff.id })],
+        }),
+      ],
+    })
+    const pad = makeSkill(CLASS, { name: "Pad", castFrames: 600, hits: [makeHit({ frame: 0 })] })
+    const rotation = makeRotation(CLASS, {
+      name: "silent",
+      steps: [makeStep({ skillId: opener.id }), makeStep({ skillId: pad.id })],
+    })
+    const result = simulateTimeline(timelineInputs(rotation, [opener, pad], [], [debuff]))
+
+    expect(result.perSkill.find((row) => row.name === "Silent Opener")).toBeUndefined()
+    expect(
+      result.timeline!.some((ev) => ev.kind === "hit" && ev.skillName === "Silent Opener"),
+    ).toBe(true)
+    expect(result.perSkill.find((row) => row.name.startsWith("Mark"))!.count).toBeGreaterThan(0)
   })
 })

@@ -14,6 +14,7 @@ import type { Inputs } from "../../src/engine/types"
 import { SET_ID } from "../../src/data/sets/ids"
 import { skillRow } from "../builtins"
 import { SKILL } from "../../src/data/skills/bellstrike-umbra/ids"
+import { retiredRotation } from "./retiredRotations"
 
 const CLASS = "bellstrikeUmbra"
 
@@ -51,7 +52,7 @@ const inputs: Inputs = {
   sustainDamageBoost: 0,
   allDamageBoost: 0,
 
-  set: SET_ID.hawking,
+  set: SET_ID.hawkwing,
   bowSet: "affinity",
   arsenal: "bellstrike",
   mindMethods: [
@@ -62,18 +63,18 @@ const inputs: Inputs = {
   ],
   classSpecificAttunement: { bleedingDamage: 0.1988 },
   combatSettings: {
-    qiBreak: { enabled: true, startSec: 25, durationSec: 10, lowQiLeadSec: 0 },
+    qiBreakOverride: { startSec: 25, durationSec: 10, lowQiLeadSec: 0 },
     dragonsBreath: false,
     healerBuff: false,
     breakExtension: false,
-    revelryScript: false,
+    script: null,
     dragonHeadFullStacks: false,
     dragonHeadLowHpMaxBonus: false,
     lowEndurance: false,
   },
   shareDebuff5HenZhi: false,
   shareEasyHurt: false,
-  tianGongElement: "fire",
+  divinecraft: "fire",
   food: false,
   bossBoost: 0.0244,
   allMartialBoost: 0.04844,
@@ -89,12 +90,12 @@ const inputs: Inputs = {
   areaMysticBoost: 0,
   dummyMode: false,
   rotation: null,
-  activeCustomRotation: null,
   martialArtsTalents: [],
   equipped: { ...EMPTY_EQUIPPED },
   inventory: [],
-  oddities: {},
-  selectedBuiltinRotationId: "builtin-bellstrikeUmbra-t6-bili",
+  unclaimedOddityNodes: {},
+  activeCustomRotation: retiredRotation("builtin-bellstrikeUmbra-t6-bili"),
+  selectedBuiltinRotationId: null,
 }
 
 describe("Bellstrike Umbra (bellstrikeUmbra) — T6-Bili parity vs the reference site", () => {
@@ -106,11 +107,11 @@ describe("Bellstrike Umbra (bellstrikeUmbra) — T6-Bili parity vs the reference
     expect(eff.resistance).toBeCloseTo(0.45, 3)
   })
 
-  it("runs the T6-Bili rotation (~60.7 s) and lands within a loose band of the site's target", () => {
+  it("runs the T6-Bili rotation (~67.7 s) and lands within a loose band of the site's target", () => {
     const result = runEngine(inputs)
 
-    expect(result.rotationDuration).toBeGreaterThan(60.2)
-    expect(result.rotationDuration).toBeLessThan(61.2)
+    expect(result.rotationDuration).toBeGreaterThan(67.4)
+    expect(result.rotationDuration).toBeLessThan(67.9)
 
     const detonation = result.perSkill.find(
       (s) => s.name === skillRow(CLASS, SKILL.bleedDetonation),
@@ -146,21 +147,21 @@ describe("Bellstrike Umbra (bellstrikeUmbra) — T6-Bili parity vs the reference
     // Intentionally loose, re-centered bands (see the file header) — not the
     // site's cached target. Re-center as further mechanics land; do not
     // widen a band to paper over a regression.
-    expect(result.dps).toBeGreaterThan(48860)
-    expect(result.dps).toBeLessThan(49030)
-    expect(result.totalDamage).toBeGreaterThan(2964000)
-    expect(result.totalDamage).toBeLessThan(2979000)
-    expect(detonation?.expectedDamage).toBeGreaterThan(1592000)
-    expect(detonation?.expectedDamage).toBeLessThan(1606000)
+    expect(result.dps).toBeGreaterThan(43845)
+    expect(result.dps).toBeLessThan(43995)
+    expect(result.totalDamage).toBeGreaterThan(2966000)
+    expect(result.totalDamage).toBeLessThan(2980000)
+    expect(detonation?.expectedDamage).toBeGreaterThan(1514000)
+    expect(detonation?.expectedDamage).toBeLessThan(1527000)
 
-    // The engine sits ~1.2 % ABOVE the cached target, from two sources the
-    // cached run predates: bleed ticks and Bleed Detonation take all-martial
-    // (and ticks sword boost) per the lvl-110 workbook's Sword typing, and a
-    // DoT tick now keeps the flat damage its own data authors.
-    expect(result.dps / SITE_TARGET_DPS).toBeGreaterThan(0.999)
-    expect(result.dps / SITE_TARGET_DPS).toBeLessThan(1.02)
-    expect(result.totalDamage / SITE_TARGET_TOTAL).toBeGreaterThan(0.999)
-    expect(result.totalDamage / SITE_TARGET_TOTAL).toBeLessThan(1.02)
-    expect((detonation?.expectedDamage ?? 0) / SITE_TARGET_DETONATION).toBeLessThan(1.018)
+    // dps sits ~9.2 % below the cached target while total damage sits above
+    // it: the animation-accurate cast lengths lengthen the rotation by
+    // several seconds, so the same hits land over a longer clock.
+    expect(result.dps / SITE_TARGET_DPS).toBeGreaterThan(0.904)
+    expect(result.dps / SITE_TARGET_DPS).toBeLessThan(0.912)
+    expect(result.totalDamage / SITE_TARGET_TOTAL).toBeGreaterThan(1.008)
+    expect(result.totalDamage / SITE_TARGET_TOTAL).toBeLessThan(1.017)
+    expect((detonation?.expectedDamage ?? 0) / SITE_TARGET_DETONATION).toBeGreaterThan(0.959)
+    expect((detonation?.expectedDamage ?? 0) / SITE_TARGET_DETONATION).toBeLessThan(0.968)
   })
 })

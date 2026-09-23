@@ -13,10 +13,14 @@ import { writeFixture } from "../writeFixture"
 import { runEngine } from "../../src/engine/dps"
 import { defaultInputs } from "../../src/engine/defaults"
 import { withDerivedStats } from "../../src/engine/derivedInputs"
+import { DEFAULT_QI_BREAK_WINDOW } from "../../src/engine/qiBreak"
 import { applyArmorSet, applyBowSet } from "../../src/engine/panel"
 import { loadProfiles } from "../../src/storage"
+import { newestBreakthroughRelease } from "../../src/definitions/baseStats/breakthroughs"
 import { defaultRotationForClass } from "../../src/engine/builtinLibrary"
 import { SET_ID } from "../../src/data/sets/ids"
+import { spearheavy } from "../../src/data/skills/bellstrike-umbra/spearheavy"
+import type { Skill } from "../../src/engine/skill"
 import type { Inputs, Result } from "../../src/engine/types"
 import anchorProfileFile from "../migrations/testProfiles/v7/bellstrikeUmbra.json"
 
@@ -36,13 +40,19 @@ const ANCHOR_FILE = anchorProfileFile as unknown as ProfileFile
 // `inputs` cannot be handed to the engine directly — this is App.tsx's pipeline.
 function anchorInputs(): Inputs {
   localStorage.clear()
+  // Stamped as having followed every breakthrough release: unstamped, the
+  // anchor's stored breakthrough follows the next one and moves every figure
+  // below on a release date rather than on a commit.
+  const profile = {
+    ...ANCHOR_FILE.profile,
+    inputs: {
+      ...ANCHOR_FILE.profile.inputs,
+      followedBreakthroughRelease: newestBreakthroughRelease(Number.MAX_SAFE_INTEGER),
+    },
+  }
   localStorage.setItem(
     PROFILES_KEY,
-    JSON.stringify({
-      v: ANCHOR_FILE.v,
-      profiles: [ANCHOR_FILE.profile],
-      activeId: ANCHOR_FILE.profile.id,
-    }),
+    JSON.stringify({ v: ANCHOR_FILE.v, profiles: [profile], activeId: profile.id }),
   )
   return loadProfiles().profiles[0].inputs
 }
@@ -72,24 +82,23 @@ function withCombat(raw: Inputs, patch: Partial<NonNullable<Inputs["combatSettin
 
 // Inserts one extra cast into whatever rotation the build already resolves to
 // (its own `activeCustomRotation`, or the class default) — for exercising a
-// skill the anchor rotation never casts on its own. Placed after the pre-pull
-// steps rather than appended, so a buff the cast grants still has most of the
-// rotation left to affect; appended at the end it would barely register.
+// skill the anchor rotation never casts on its own. Placed first rather than
+// appended, so a buff the cast grants still has most of the rotation left to
+// affect; appended at the end it would barely register. The cast lands only the
+// skill's first hit, through a same-id override that keeps its cast length.
 //
 // The step id is a literal because `makeStep` derives one from `Date.now()` and
 // `Math.random()`, and a cast's `stepId` reaches the result `digestOf` hashes —
 // a generated id makes the recorded digest unreproducible.
-function withStepAfterPrePull(raw: Inputs, skillId: string): Inputs {
+function withFirstHitCastFirst(raw: Inputs, skill: Skill): Inputs {
   const rotation = raw.activeCustomRotation ?? defaultRotationForClass(raw.classId)!
-  const steps = [...rotation.steps]
-  const firstNonPrePull = steps.findIndex((step) => !step.prePull)
-  steps.splice(firstNonPrePull < 0 ? steps.length : firstNonPrePull, 0, {
-    id: `st-baseline-${skillId}`,
-    skillId,
-    hitCount: 1,
-    prePull: false,
-  })
-  return { ...raw, activeCustomRotation: { ...rotation, steps } }
+  const steps = [{ id: `st-baseline-${skill.id}`, skillId: skill.id }, ...rotation.steps]
+  const firstHitOnly = { ...skill, hits: skill.hits.slice(0, 1) }
+  return {
+    ...raw,
+    customSkills: [...(raw.customSkills ?? []), firstHitOnly],
+    activeCustomRotation: { ...rotation, steps },
+  }
 }
 
 const ARMOUR_SETS: readonly [label: string, id: string][] = [
@@ -109,21 +118,29 @@ const CASES: { name: string; build: () => Inputs }[] = [
   },
   { name: "anchor:dummyOff", build: () => toEngineInputs({ ...anchorInputs(), dummyMode: false }) },
   {
+    name: "anchor:breakthrough17",
+    build: () => toEngineInputs({ ...anchorInputs(), breakthrough: 17 }),
+  },
+  {
     name: "anchor:noQiBreak",
-    build: () => {
-      const raw = anchorInputs()
-      return toEngineInputs(
-        withCombat(raw, { qiBreak: { ...raw.combatSettings!.qiBreak, enabled: false } }),
-      )
-    },
+    build: () =>
+      toEngineInputs(
+        withCombat(anchorInputs(), {
+          qiBreakOverride: { ...DEFAULT_QI_BREAK_WINDOW, durationSec: 0 },
+        }),
+      ),
   },
   {
     name: "anchor:healerBuff",
     build: () => toEngineInputs(withCombat(anchorInputs(), { healerBuff: true })),
   },
   {
-    name: "anchor:revelryScript",
-    build: () => toEngineInputs(withCombat(anchorInputs(), { revelryScript: true })),
+    name: "anchor:wraithstrikeScript",
+    build: () => toEngineInputs(withCombat(anchorInputs(), { script: "wraithstrikeScript" })),
+  },
+  {
+    name: "anchor:voidrotScript",
+    build: () => toEngineInputs(withCombat(anchorInputs(), { script: "voidrotScript" })),
   },
   {
     name: "anchor:breakExtension",
@@ -157,10 +174,7 @@ const CASES: { name: string; build: () => Inputs }[] = [
     name: "anchor:spearHeavyNoWolfchasersArt",
     build: () =>
       toEngineInputs(
-        withStepAfterPrePull(
-          withoutInnerWay(anchorInputs(), "Wolfchaser's Art"),
-          "bellstrikeUmbra-spearheavy",
-        ),
+        withFirstHitCastFirst(withoutInnerWay(anchorInputs(), "Wolfchaser's Art"), spearheavy),
       ),
   },
   {
@@ -276,36 +290,62 @@ describe("engine baseline", () => {
   }
 })
 
-// The figures the plan promises will not move. Spelled out separately from the
-// fixture so a re-baseline cannot silently take them with it.
+// Figures read off the running app, spelled out separately from the fixture so
+// a re-baseline cannot silently take them with it. Moving one is a claim about
+// the game, not about the engine.
+// Re-baselined once: the talent board now follows the profile's breakthrough,
+// and this build stands at 16, so the nodes behind Solo Mode Level 17 no longer
+// count towards it. The figures the board's full 122 nodes produce are the
+// breakthrough-17 block below.
 describe("engine baseline — profile-v7 anchor", () => {
   const result = runEngine(toEngineInputs(anchorInputs()))
   const damageOf = (name: string) =>
     round(result.perSkill.find((row) => row.name === name)?.expectedDamage ?? NaN, 2)
 
   it("still reports the user-verified rotation figures", () => {
-    expect(round(result.dps, 2)).toBe(75079.84)
-    expect(round(result.totalDamage, 2)).toBe(4325850.03)
-    expect(round(result.rotationDuration, 4)).toBe(57.6167)
+    expect(round(result.dps, 2)).toBe(75752.28)
+    expect(round(result.totalDamage, 2)).toBe(4545136.92)
+    expect(round(result.rotationDuration, 4)).toBe(60)
     expect(result.warnings).toEqual([])
   })
 
   // The two `attune:bleed` entities — the only rows P1 may touch, and it must
   // move neither.
   it("still reports the bleed rows P1 relocates the attunement for", () => {
-    expect(damageOf("Blood Burst")).toBe(2158142.62)
-    expect(damageOf("Bleeding (DoT)")).toBe(278117.22)
+    expect(damageOf("Blood Burst")).toBe(2111355.75)
+    expect(damageOf("Bleeding (DoT)")).toBe(282710.86)
   })
 
   // DoT rows WITHOUT the attunement — these prove the new join does not
   // over-reach into every DoT.
   it("still reports the un-attuned DoT rows", () => {
-    expect(damageOf("Smolder (DoT)")).toBe(400921.56)
-    expect(damageOf("Flute Ripple (DoT)")).toBe(93159.96)
+    expect(damageOf("Smolder (DoT)")).toBe(485546.33)
+    expect(damageOf("Flute Ripple (DoT)")).toBe(104009.32)
   })
 
   // Exists only via the Morale Chant tier-6 branch that P7 relocates.
   it("still reports Yi River", () => {
-    expect(damageOf("Yi River")).toBe(49263.94)
+    expect(damageOf("Yi River")).toBe(57698.1)
+  })
+})
+
+describe("engine baseline — profile-v7 anchor at breakthrough 17", () => {
+  const result = runEngine(toEngineInputs({ ...anchorInputs(), breakthrough: 17 }))
+  const damageOf = (name: string) =>
+    round(result.perSkill.find((row) => row.name === name)?.expectedDamage ?? NaN, 2)
+
+  it("reports the rotation figures with the whole board taken", () => {
+    expect(round(result.dps, 2)).toBe(77078.16)
+    expect(round(result.totalDamage, 2)).toBe(4624689.78)
+    expect(round(result.rotationDuration, 4)).toBe(60)
+    expect(result.warnings).toEqual([])
+  })
+
+  it("raises every damage row the breakthrough-16 build reports", () => {
+    expect(damageOf("Blood Burst")).toBe(2147887.11)
+    expect(damageOf("Bleeding (DoT)")).toBe(288069.99)
+    expect(damageOf("Smolder (DoT)")).toBe(494453.26)
+    expect(damageOf("Flute Ripple (DoT)")).toBe(105898.28)
+    expect(damageOf("Yi River")).toBe(58770.78)
   })
 })

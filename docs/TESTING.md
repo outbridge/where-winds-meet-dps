@@ -5,7 +5,8 @@
 
 ## Class scoping — a class's numbers are defended only by an anchor
 
-`bellstrikeUmbra` and `stonesplitStrength` are validated (CLASSES.md). A passing
+`bellstrikeUmbra`, `bellstrikeSplendor`, `stonesplitStrength` and
+`bamboocutDraught` are validated (CLASSES.md). A passing
 sweep over a class that has no anchor reads as validation it has not had.
 
 - **Do not add an all-classes `dps > 0` sweep.** It proves nothing and
@@ -80,6 +81,13 @@ assert properties of the code rather than of a build:
   fails the suite instead of silently reaching nothing, and a module can't be both
   globally- and specifically-scoped at once
 - the `src/data` ↔ `src/definitions` boundary in both directions (CLASSES.md)
+- every built-in rotation and graduation build module declaring the class whose
+  folder holds it, and every registered class offering exactly the modules that
+  declare it
+- every mystic art authored once under the shared class id, no class folder
+  declaring one, nothing in the shared pool naming a class, and every registered
+  class's composed definition carrying the whole pool (CLASSES.md § "Mystic
+  arts")
 - `docs/**` naming no content and carrying no dates (CLAUDE.md § "Docs are
   implementation rules")
 
@@ -98,9 +106,12 @@ guard** — an invariant only prose enforces is one that rots.
 
 ## Migration tests
 
-Every step in `src/migrations/` ships with a test in `tests/migrations/`.
-Migrations are the one kind of code neither the type checker nor the rest of the
-suite can protect: a broken step corrupts real saved builds silently.
+Every step in `src/migrations/` — the profile chain and the per-store chains
+under it — ships with a test in `tests/migrations/`. Migrations are the one kind
+of code neither the type checker nor the rest of the suite can protect: a broken
+step corrupts real saved builds silently. The rules below name profiles; they bind
+a skill or debuff store step the same way, with the store fixture in place of the
+profile.
 
 1. **Test against a real captured profile**, one test file per step, named for the
    version the step produces and reading the fixture at the version the step

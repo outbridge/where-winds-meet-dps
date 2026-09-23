@@ -2,6 +2,7 @@ import { defineSkill, hit } from "../../../definitions/skills/skillDef"
 import { ATTUNE, CAST, ROLE, WEAPON } from "../ids"
 import { BUFF } from "../buffs/ids"
 import { SKILL } from "./ids"
+import { STRATEGIC_SWORD_RECEIVES } from "./receives"
 
 export const bleedTick = defineSkill({
   id: SKILL.bleedTick,
@@ -13,19 +14,24 @@ export const bleedTick = defineSkill({
   weaponOrAttribute: "Sword",
   attributeAttack: "Bellstrike",
   castTag: CAST.bleedTick,
-  receives: [BUFF.bellstrikeUmbraBleedPen, BUFF.bellstrikeUmbraBleedingDamage, BUFF.soulShaken],
-  elevatedAttributeMultiplier: false,
+  receives: [
+    BUFF.bellstrikeUmbraBleedPen,
+    BUFF.bellstrikeUmbraBleedingDamage,
+    BUFF.bellstrikeUmbraBleedCoefficient,
+    BUFF.soulShaken,
+    ...STRATEGIC_SWORD_RECEIVES,
+  ],
   castFrames: 0,
   triggerable: true,
   hits: [
     hit(0, {
       frame: 0,
-      physMultiplier: 0.06864,
-      attributeMultiplier: 0.10296,
+      physMultiplier: 0.066,
+      attributeMultiplier: 0.099,
       physFixed: 0,
       attributeFixed: 0,
     }),
   ],
   createdAt: "2026-07-19T00:00:00.000Z",
-  updatedAt: "2026-07-19T00:00:00.000Z",
+  updatedAt: "2026-09-03T00:00:00.000Z",
 })

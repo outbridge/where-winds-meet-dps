@@ -1,7 +1,8 @@
-import { defineSkill, hit } from "../../../definitions/skills/skillDef"
-import { applyDot } from "../../../definitions/skills/triggers"
+import { defineSkill } from "../../../definitions/skills/skillDef"
 import { ATTUNE, CAST, WEAPON } from "../ids"
-import { SKILL, DEBUFF } from "./ids"
+import { SKILL } from "./ids"
+import { SWORD_CHARGE_STAGE_1_HITS } from "./sword-charge-stage-1-hits"
+import { STRATEGIC_SWORD_RECEIVES } from "./receives"
 
 export const swordChargeStage13Hit = defineSkill({
   id: SKILL.swordChargeStage13Hit,
@@ -13,34 +14,11 @@ export const swordChargeStage13Hit = defineSkill({
   weaponOrAttribute: "Sword",
   attributeAttack: "Bellstrike",
   castTag: CAST.swordChargeStage13Hit,
-  castFrames: 66,
+  receives: STRATEGIC_SWORD_RECEIVES,
+  // A player-ended form: castFrames sits 11 frames past the frame at which the animation would accept the next input (in-game animation, 2026-09-09).
+  castFrames: 52,
   triggerable: true,
-  hits: [
-    hit(0, {
-      frame: 0,
-      physMultiplier: 0.31338333333333335,
-      attributeMultiplier: 0.47008333333333335,
-      physFixed: 86.66666666666667,
-      attributeFixed: 47.166666666666664,
-      triggers: [applyDot({ target: DEBUFF.bleedTick })],
-    }),
-    hit(1, {
-      frame: 22,
-      physMultiplier: 0.31338333333333335,
-      attributeMultiplier: 0.47008333333333335,
-      physFixed: 86.66666666666667,
-      attributeFixed: 47.166666666666664,
-      triggers: [applyDot({ target: DEBUFF.bleedTick })],
-    }),
-    hit(2, {
-      frame: 44,
-      physMultiplier: 0.31338333333333335,
-      attributeMultiplier: 0.47008333333333335,
-      physFixed: 86.66666666666667,
-      attributeFixed: 47.166666666666664,
-      triggers: [applyDot({ target: DEBUFF.bleedTick })],
-    }),
-  ],
+  hits: SWORD_CHARGE_STAGE_1_HITS.slice(0, 3),
   createdAt: "2026-07-31T00:00:00.000Z",
-  updatedAt: "2026-07-31T00:00:00.000Z",
+  updatedAt: "2026-09-09T00:00:00.000Z",
 })
